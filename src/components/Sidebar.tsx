@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import SidebarLink from "./SidebarLink";
-import { storageService } from "../../services/storageService";
+import backendService from "../../services/backendService";
 import { User, Session } from "../../types";
 
 interface SidebarProps {
@@ -21,11 +21,19 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ user, onLogout }) => {
   const location = useLocation();
   const [activeSession, setActiveSession] = useState<Session | undefined>(
-    undefined
+    undefined,
   );
 
   useEffect(() => {
-    setActiveSession(storageService.getActiveSession());
+    const load = async () => {
+      try {
+        const s = await backendService.getActiveSession();
+        setActiveSession(s || undefined);
+      } catch (e) {
+        setActiveSession(undefined);
+      }
+    };
+    load();
   }, []);
 
   return (

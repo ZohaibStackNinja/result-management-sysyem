@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { storageService } from "../../services/storageService";
+import backendService from "../../services/backendService";
 import {
   Subject,
   ExamTerm,
@@ -58,13 +58,22 @@ const ClassConfigurationModal: React.FC<{
   // Basic Details
   const [className, setClassName] = useState(schoolClass?.className || "");
   const [section, setSection] = useState(schoolClass?.section || "");
+  const [campus, setCampus] = useState<"Boys" | "Girls" | "Both">(
+    (schoolClass?.campus as "Boys" | "Girls" | "Both") || "Both",
+  );
   const [homeroomTeacherId, setHomeroomTeacherId] = useState(
-    schoolClass?.classTeacherId || ""
+    schoolClass?.classTeacherId || "",
+  );
+  const [homeroomTeacherBoysId, setHomeroomTeacherBoysId] = useState(
+    schoolClass?.classTeacherBoysId || "",
+  );
+  const [homeroomTeacherGirlsId, setHomeroomTeacherGirlsId] = useState(
+    schoolClass?.classTeacherGirlsId || "",
   );
 
   // Subject Allocation & Teacher Assignment
   const [selectedSubjects, setSelectedSubjects] = useState<Set<string>>(
-    new Set(schoolClass?.subjectIds || [])
+    new Set(schoolClass?.subjectIds || []),
   );
   const [subjectTeachers, setSubjectTeachers] = useState<{
     [subjectId: string]: string;
@@ -74,24 +83,34 @@ const ClassConfigurationModal: React.FC<{
   const [subjectSearch, setSubjectSearch] = useState("");
   const [showOnlySelected, setShowOnlySelected] = useState(false);
 
-  // Load existing assignments
+  // Load existing assignments from passed schoolClass object
   useEffect(() => {
     if (schoolClass) {
-      // Load existing teacher assignments for this class
       const assignments: { [key: string]: string } = {};
-      allSubjects.forEach((sub) => {
-        const assigned = storageService.getSubjectTeacher(
-          sub.id,
-          schoolClass.className,
-          schoolClass.section
-        );
-        if (assigned && assigned !== "Not Assigned") {
-          assignments[sub.id] = assigned;
-        }
-      });
+      if (
+        schoolClass.subjectTeachers &&
+        Array.isArray(schoolClass.subjectTeachers)
+      ) {
+        schoolClass.subjectTeachers.forEach((t: any) => {
+          if (t.subjectId && t.teacherName)
+            assignments[t.subjectId] = t.teacherName;
+        });
+      }
       setSubjectTeachers(assignments);
+
+      // Load campus and per-campus homeroom assignments if present
+      setCampus((schoolClass.campus as "Boys" | "Girls" | "Both") || "Both");
+      setHomeroomTeacherId(schoolClass.classTeacherId || "");
+      setHomeroomTeacherBoysId(schoolClass.classTeacherBoysId || "");
+      setHomeroomTeacherGirlsId(schoolClass.classTeacherGirlsId || "");
+      setSelectedSubjects(new Set(schoolClass.subjectIds || []));
     } else {
       setSelectedSubjects(new Set());
+      setCampus("Both");
+      setHomeroomTeacherId("");
+      setHomeroomTeacherBoysId("");
+      setHomeroomTeacherGirlsId("");
+      setSubjectTeachers({});
     }
   }, [schoolClass, allSubjects]);
 
@@ -124,10 +143,25 @@ const ClassConfigurationModal: React.FC<{
       const updates: Partial<SchoolClass> = {
         className,
         section,
-        classTeacherId: homeroomTeacherId,
-        classTeacherName: teacherName,
+        campus,
         subjectIds: Array.from(selectedSubjects) as string[],
       };
+
+      if (campus === "Both") {
+        updates.classTeacherBoysId = homeroomTeacherBoysId || undefined;
+        updates.classTeacherBoysName = homeroomTeacherBoysId
+          ? allTeachers.find((t) => t.id === homeroomTeacherBoysId)?.name || ""
+          : undefined;
+        updates.classTeacherGirlsId = homeroomTeacherGirlsId || undefined;
+        updates.classTeacherGirlsName = homeroomTeacherGirlsId
+          ? allTeachers.find((t) => t.id === homeroomTeacherGirlsId)?.name || ""
+          : undefined;
+      } else {
+        updates.classTeacherId = homeroomTeacherId || undefined;
+        updates.classTeacherName = homeroomTeacherId
+          ? allTeachers.find((t) => t.id === homeroomTeacherId)?.name || ""
+          : undefined;
+      }
 
       const teachersToSave = (Array.from(selectedSubjects) as string[]).map(
         (subId) => {
@@ -141,27 +175,28 @@ const ClassConfigurationModal: React.FC<{
             subjectId: subId,
             teacherName: assigned || "", // Empty string might imply "Unassigned" or "Use Default" depending on logic, but here we save explicit assignment
           };
-        }
+        },
       );
 
       if (schoolClass) {
-        storageService.saveClassConfiguration(
+        backendService.saveClassConfiguration(
           schoolClass.id,
           updates,
-          teachersToSave
+          teachersToSave,
         );
       } else {
         // Create new
+        const suffix = campus ? `-${campus.toLowerCase()}` : "";
         const newId = section
-          ? `${className}-${section}`.toLowerCase().replace(/\s/g, "-")
-          : className.toLowerCase().replace(/\s/g, "-");
+          ? `${className}-${section}${suffix}`.toLowerCase().replace(/\s/g, "-")
+          : `${className}${suffix}`.toLowerCase().replace(/\s/g, "-");
 
-        storageService.addClass({
+        backendService.addClass({
           ...updates,
           id: newId,
           sessionId: "",
         } as SchoolClass);
-        storageService.saveClassConfiguration(newId, updates, teachersToSave);
+        backendService.saveClassConfiguration(newId, updates, teachersToSave);
       }
       onSave();
       onClose();
@@ -173,7 +208,7 @@ const ClassConfigurationModal: React.FC<{
   // Filter and Sort Subjects for the UI
   const displayedSubjects = useMemo(() => {
     let filtered = allSubjects.filter((s) =>
-      s.name.toLowerCase().includes(subjectSearch.toLowerCase())
+      s.name.toLowerCase().includes(subjectSearch.toLowerCase()),
     );
 
     if (showOnlySelected) {
@@ -250,26 +285,101 @@ const ClassConfigurationModal: React.FC<{
 
               <div className="p-4 bg-primary-50 rounded-xl border border-primary-100">
                 <label className="block text-sm font-bold text-primary-800 mb-2">
-                  Homeroom Teacher
+                  Campus
                 </label>
-                <SearchableTeacherSelect
-                  teachers={allTeachers}
-                  value={
-                    allTeachers.find((t) => t.id === homeroomTeacherId)?.name ||
-                    ""
-                  }
-                  onChange={(name) => {
-                    const t = allTeachers.find(
-                      (teacher) => teacher.name === name
-                    );
-                    if (t) setHomeroomTeacherId(t.id);
-                    else setHomeroomTeacherId("");
-                  }}
-                  placeholder="Select Teacher..."
-                  className="bg-white shadow-xs"
-                />
+                <div className="mb-3">
+                  <select
+                    value={campus}
+                    onChange={(e) => setCampus(e.target.value as any)}
+                    className="w-full px-3 py-2 border border-primary-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                  >
+                    <option value="Both">Both Campuses</option>
+                    <option value="Boys">Boys Campus</option>
+                    <option value="Girls">Girls Campus</option>
+                  </select>
+                </div>
+
+                {campus === "Both" ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-primary-800 mb-1">
+                        Boys Incharge
+                      </label>
+                      <SearchableTeacherSelect
+                        teachers={allTeachers.filter(
+                          (t) => t.campus === "Boys" || t.campus === "Both",
+                        )}
+                        value={
+                          allTeachers.find(
+                            (t) => t.id === homeroomTeacherBoysId,
+                          )?.name || ""
+                        }
+                        onChange={(name) => {
+                          const t = allTeachers.find(
+                            (teacher) => teacher.name === name,
+                          );
+                          if (t) setHomeroomTeacherBoysId(t.id);
+                          else setHomeroomTeacherBoysId("");
+                        }}
+                        placeholder="Select Boys Incharge..."
+                        className="bg-white shadow-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-primary-800 mb-1">
+                        Girls Incharge
+                      </label>
+                      <SearchableTeacherSelect
+                        teachers={allTeachers.filter(
+                          (t) => t.campus === "Girls" || t.campus === "Both",
+                        )}
+                        value={
+                          allTeachers.find(
+                            (t) => t.id === homeroomTeacherGirlsId,
+                          )?.name || ""
+                        }
+                        onChange={(name) => {
+                          const t = allTeachers.find(
+                            (teacher) => teacher.name === name,
+                          );
+                          if (t) setHomeroomTeacherGirlsId(t.id);
+                          else setHomeroomTeacherGirlsId("");
+                        }}
+                        placeholder="Select Girls Incharge..."
+                        className="bg-white shadow-xs"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-bold text-primary-800 mb-2">
+                      Homeroom Teacher
+                    </label>
+                    <SearchableTeacherSelect
+                      teachers={allTeachers.filter(
+                        (t) => t.campus === campus || t.campus === "Both",
+                      )}
+                      value={
+                        allTeachers.find((t) => t.id === homeroomTeacherId)
+                          ?.name || ""
+                      }
+                      onChange={(name) => {
+                        const t = allTeachers.find(
+                          (teacher) => teacher.name === name,
+                        );
+                        if (t) setHomeroomTeacherId(t.id);
+                        else setHomeroomTeacherId("");
+                      }}
+                      placeholder="Select Teacher..."
+                      className="bg-white shadow-xs"
+                    />
+                  </div>
+                )}
+
                 <p className="text-[10px] text-primary-600 mt-2 leading-relaxed">
-                  Responsible for attendance and general class management.
+                  Responsible for attendance and general class management. For
+                  classes covering both campuses you can set separate in-charges
+                  for each campus.
                 </p>
               </div>
 
@@ -477,7 +587,7 @@ const ClassConfigurationModal: React.FC<{
   );
 };
 
-const Settings: React.FC = () => {
+const Settings: React.FC<{ user?: any }> = ({ user }) => {
   const [activeTab, setActiveTab] = useState<
     | "subjects"
     | "classes"
@@ -505,7 +615,7 @@ const Settings: React.FC = () => {
   const [isSessionLocked, setIsSessionLocked] = useState(false);
 
   // Current User
-  const currentUser = storageService.getCurrentUser();
+  const currentUser = user;
   const isAdmin = currentUser?.role === "admin";
 
   // Modals
@@ -521,8 +631,13 @@ const Settings: React.FC = () => {
     name: "",
     totalMarks: 100,
     teacherName: "",
+    // Optional components config for T+P subjects
+    components: undefined as
+      | undefined
+      | { theory?: number; practical?: number },
   });
-  const [newExam, setNewExam] = useState({ name: "" });
+  const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
+  const [newExam, setNewExam] = useState({ name: "", term: "" });
 
   // User Management State
   const [newUser, setNewUser] = useState({
@@ -536,6 +651,12 @@ const Settings: React.FC = () => {
   const [newTeacher, setNewTeacher] = useState({ name: "", campus: "Both" });
 
   const [newSessionName, setNewSessionName] = useState("");
+
+  // Account update state (current user)
+  const [accountForm, setAccountForm] = useState({
+    username: currentUser?.username || "",
+    name: currentUser?.name || "",
+  });
 
   // Password Change State
   const [passwordForm, setPasswordForm] = useState({
@@ -551,48 +672,125 @@ const Settings: React.FC = () => {
     if (!isAdmin) setActiveTab("account");
   }, []);
 
-  const refreshData = () => {
-    setSubjects(storageService.getSubjects());
-    setClasses(storageService.getClasses());
-    setExams(storageService.getExams());
-    setLogs(storageService.getLogs());
-    setGradingRules(storageService.getGradingRules());
-    setUsers(storageService.getUsers());
-    setTeachers(storageService.getTeachers());
-    setSessions(storageService.getSessions());
-    setClassSubjectTeachers(storageService.getClassTeachers());
-    setIsSessionLocked(storageService.isSessionLocked());
+  // whenever currentUser updates, keep accountForm in sync
+  useEffect(() => {
+    setAccountForm({
+      username: currentUser?.username || "",
+      name: currentUser?.name || "",
+    });
+  }, [currentUser]);
+
+  const refreshData = async () => {
+    try {
+      const [
+        subs,
+        classes,
+        exams,
+        logs,
+        grading,
+        users,
+        teachers,
+        sessions,
+        classTeachers,
+        sessionLocked,
+      ] = await Promise.all([
+        backendService.getSubjects(),
+        backendService.getClasses(),
+        backendService.getExams(),
+        backendService.getLogs(),
+
+        backendService.getGradingRules(),
+        backendService.getUsers(),
+        backendService.getTeachers(),
+        backendService.getSessions(),
+        backendService.getClassTeachers(),
+        backendService.isSessionLocked(),
+      ]);
+
+      setSubjects(subs || []);
+      setClasses(classes || []);
+      setExams(exams || []);
+      setLogs(logs || []);
+      setGradingRules(grading || []);
+      setUsers(users || []);
+      setTeachers(teachers || []);
+      setSessions(sessions || []);
+      setClassSubjectTeachers(classTeachers || []);
+      setIsSessionLocked(!!sessionLocked);
+    } catch (e) {
+      console.error("Failed to refresh settings data:", e);
+    }
   };
 
-  const handleAddSubject = (e: React.FormEvent) => {
+  const handleAddSubject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newSubject.name) {
-      storageService.addSubject({
-        id: newSubject.name.toLowerCase().replace(/\s+/g, "-"),
-        name: newSubject.name,
-        totalMarks: newSubject.totalMarks,
-        teacherName: newSubject.teacherName,
+    if (!newSubject.name) return;
+
+    // If components are provided, ensure totalMarks matches sum
+    let components = newSubject.components;
+    let total = newSubject.totalMarks || 0;
+    if (components) {
+      const th = components.theory || 0;
+      const pr = components.practical || 0;
+      total = th + pr;
+    }
+
+    const subjectObj: Subject = {
+      id: editingSubjectId
+        ? editingSubjectId
+        : newSubject.name.toLowerCase().replace(/\s+/g, "-"),
+      name: newSubject.name,
+      totalMarks: total,
+      teacherName: newSubject.teacherName,
+      components: components ? { ...components } : undefined,
+    } as Subject;
+
+    try {
+      if (editingSubjectId) {
+        await backendService.updateSubject(subjectObj.id, subjectObj);
+      } else {
+        await backendService.addSubject(subjectObj);
+      }
+      setNewSubject({
+        name: "",
+        totalMarks: 100,
+        teacherName: "",
+        components: undefined,
       });
-      setNewSubject({ name: "", totalMarks: 100, teacherName: "" });
+      setEditingSubjectId(null);
       setIsSubjectModalOpen(false);
       refreshData();
+    } catch (err: any) {
+      alert(err.message || "Failed to save subject");
     }
   };
 
   const handleDeleteSubject = (id: string) => {
     if (confirm("Delete this subject? Associated marks might be orphaned.")) {
-      storageService.deleteSubject(id);
+      backendService.deleteSubject(id);
       refreshData();
     }
+  };
+
+  const handleEditSubject = (sub: Subject) => {
+    // Populate modal with existing subject values
+    setEditingSubjectId(sub.id);
+    setNewSubject({
+      name: sub.name,
+      totalMarks: sub.totalMarks,
+      teacherName: sub.teacherName || "",
+      components: sub.components ? { ...sub.components } : undefined,
+    });
+    setIsSubjectModalOpen(true);
   };
 
   const handleDeleteClass = (id: string) => {
     if (
       confirm(
-        "Delete this class definition? Students in this class will not be deleted, but class configurations will be lost."
+        "Delete this class definition? Students in this class will not be deleted, but class configurations will be lost.",
       )
     ) {
-      storageService.deleteClass(id);
+      backendService.deleteClass(id);
       refreshData();
     }
   };
@@ -601,13 +799,14 @@ const Settings: React.FC = () => {
   const handleAddExam = (e: React.FormEvent) => {
     e.preventDefault();
     if (newExam.name) {
-      storageService.addExam({
+      backendService.addExam({
         id: newExam.name.toLowerCase().replace(/\s+/g, "-"),
         name: newExam.name,
+        term: newExam.term || undefined,
         isLocked: false,
         sessionId: "",
       });
-      setNewExam({ name: "" });
+      setNewExam({ name: "", term: "" });
       refreshData();
     }
   };
@@ -615,7 +814,7 @@ const Settings: React.FC = () => {
   const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      storageService.addUser({
+      backendService.addUser({
         id: Date.now().toString(),
         username: newUser.username,
         password: newUser.password,
@@ -632,7 +831,7 @@ const Settings: React.FC = () => {
 
   const handleDeleteUser = (id: string) => {
     if (confirm("Delete this user? This cannot be undone.")) {
-      storageService.deleteUser(id);
+      backendService.deleteUser(id);
       refreshData();
     }
   };
@@ -640,7 +839,7 @@ const Settings: React.FC = () => {
   const handleAddTeacher = (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      storageService.addTeacher({
+      backendService.addTeacher({
         id: `teacher-${Date.now()}`,
         name: newTeacher.name,
         campus: newTeacher.campus as "Boys" | "Girls" | "Both",
@@ -654,7 +853,7 @@ const Settings: React.FC = () => {
 
   const handleDeleteTeacher = (id: string) => {
     if (confirm("Delete this teacher from the list?")) {
-      storageService.deleteTeacher(id);
+      backendService.deleteTeacher(id);
       refreshData();
     }
   };
@@ -664,13 +863,13 @@ const Settings: React.FC = () => {
     if (newSessionName) {
       if (
         confirm(
-          `Create and activate new session "${newSessionName}"? This will lock all previous sessions.`
+          `Create and activate new session "${newSessionName}"? This will lock all previous sessions.`,
         )
       ) {
-        storageService.createSession(newSessionName);
+        backendService.createSession(newSessionName);
         setNewSessionName("");
         alert(
-          "New session active. First Term and Final Term exams created automatically."
+          "New session active. First Term and Final Term exams created automatically.",
         );
         window.location.reload();
       }
@@ -680,28 +879,28 @@ const Settings: React.FC = () => {
   const handleSwitchSession = (sessionId: string) => {
     if (
       confirm(
-        "Switch active session? The dashboard and all data forms will update."
+        "Switch active session? The dashboard and all data forms will update.",
       )
     ) {
-      storageService.switchSession(sessionId);
+      backendService.switchSession(sessionId);
       window.location.reload();
     }
   };
 
   const handleToggleSessionLock = (sessionId: string) => {
-    storageService.toggleSessionLock(sessionId);
+    backendService.toggleSessionLock(sessionId);
     refreshData();
   };
 
   const toggleLock = (id: string) => {
-    storageService.toggleExamLock(id);
+    backendService.toggleExamLock(id);
     refreshData();
   };
 
   const handleGradingChange = (
     index: number,
     field: keyof GradingRule,
-    value: string | number
+    value: string | number,
   ) => {
     const updated = [...gradingRules];
     updated[index] = { ...updated[index], [field]: value };
@@ -718,32 +917,36 @@ const Settings: React.FC = () => {
   };
 
   const saveGradingRules = () => {
-    storageService.saveGradingRules(gradingRules);
+    backendService.saveGradingRules(gradingRules);
     alert("Grading scale updated successfully.");
   };
 
   const handleBackup = () => {
-    const backupData = storageService.getBackupData();
-    const blob = new Blob([JSON.stringify(backupData, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `academix_backup_${
-      new Date().toISOString().split("T")[0]
-    }.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    storageService.logActivity("DATA_BACKUP", "System backup downloaded");
-    refreshData();
+    const doBackup = async () => {
+      const backupData = await backendService.getBackupData();
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `academix_backup_${
+        new Date().toISOString().split("T")[0]
+      }.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      backendService.logActivity("DATA_BACKUP", "System backup downloaded");
+      refreshData();
+    };
+    doBackup();
   };
 
   const handleRestoreClick = () => {
     if (
       confirm(
-        "WARNING: Restoring a backup will REPLACE all current data. This cannot be undone. Are you sure?"
+        "WARNING: Restoring a backup will REPLACE all current data. This cannot be undone. Are you sure?",
       )
     ) {
       fileInputRef.current?.click();
@@ -759,7 +962,7 @@ const Settings: React.FC = () => {
       try {
         const json = JSON.parse(event.target?.result as string);
         if (json.students && json.subjects) {
-          storageService.restoreData(json);
+          backendService.restoreData(json);
           alert("System restored successfully! Reloading...");
           window.location.reload();
         } else {
@@ -774,25 +977,14 @@ const Settings: React.FC = () => {
   };
 
   const handleFactoryReset = () => {
-    const confirmText = prompt(
-      "Type 'DELETE' to confirm factory reset. This will wipe ALL data."
-    );
-    if (confirmText === "DELETE") {
-      localStorage.clear();
-      alert("System reset complete. Reloading...");
-      window.location.reload();
-    }
+    // feature deprecated; data is stored on backend and cannot be cleared from frontend
+    alert("Factory reset is disabled in this build.");
   };
 
   const handleClearMarks = () => {
-    const confirmText = prompt(
-      "Type 'CLEAR' to delete ALL Marks. Students and Subjects will be kept."
+    alert(
+      "Clearing marks is not supported from the frontend; use backend APIs.",
     );
-    if (confirmText === "CLEAR") {
-      localStorage.removeItem("academix_marks");
-      alert("All marks have been deleted.");
-      window.location.reload();
-    }
   };
 
   const handlePasswordChange = (e: React.FormEvent) => {
@@ -805,23 +997,35 @@ const Settings: React.FC = () => {
       setPasswordMsg("Passwords do not match.");
       return;
     }
-    storageService.changePassword(passwordForm.newPass);
+    const currentUserUsername = currentUser?.username || "";
+    backendService.changePasswordForUser(
+      currentUserUsername,
+      passwordForm.newPass,
+    );
     setPasswordMsg("Password updated successfully!");
     setPasswordForm({ newPass: "", confirmPass: "" });
   };
 
   // Filter Subjects
   const filteredLibrarySubjects = subjects.filter((s) =>
-    s.name.toLowerCase().includes(subjectLibrarySearch.toLowerCase())
+    s.name.toLowerCase().includes(subjectLibrarySearch.toLowerCase()),
   );
 
   // Resolve Subject Teacher helper
   const getSubjectTeacherName = (subject: Subject, cls: SchoolClass) => {
+    // first prefer configuration attached directly to class object
+    if (cls && cls.subjectTeachers && Array.isArray(cls.subjectTeachers)) {
+      const o = cls.subjectTeachers.find(
+        (t: any) => t.subjectId === subject.id,
+      );
+      if (o && o.teacherName) return o.teacherName;
+    }
+    // fallback to legacy list
     const override = classSubjectTeachers.find(
       (t) =>
         t.subjectId === subject.id &&
         t.className === cls.className &&
-        t.section === cls.section
+        t.section === cls.section,
     );
     return override?.teacherName || subject.teacherName || "Unassigned";
   };
@@ -1025,7 +1229,9 @@ const Settings: React.FC = () => {
                         </td>
                         <td className="px-6 py-3">
                           <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold">
-                            {sub.totalMarks}
+                            {sub.components
+                              ? `${sub.totalMarks} (T:${sub.components.theory || 0} P:${sub.components.practical || 0})`
+                              : sub.totalMarks}
                           </span>
                         </td>
                         <td className="px-6 py-3 text-gray-600">
@@ -1040,7 +1246,15 @@ const Settings: React.FC = () => {
                             </span>
                           )}
                         </td>
-                        <td className="px-6 py-3 text-right">
+                        <td className="px-6 py-3 text-right flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleEditSubject(sub)}
+                            className="text-gray-400 hover:text-primary-600 p-2 rounded-lg hover:bg-primary-50 transition"
+                            title="Edit Subject"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+
                           <button
                             onClick={() => handleDeleteSubject(sub.id)}
                             className="text-gray-400 hover:text-red-600 p-2 rounded-lg hover:bg-red-50 transition"
@@ -1118,7 +1332,7 @@ const Settings: React.FC = () => {
                             <span className="font-medium text-gray-700">
                               {cls.classTeacherName ||
                                 teachers.find(
-                                  (t) => t.id === cls.classTeacherId
+                                  (t) => t.id === cls.classTeacherId,
                                 )?.name ||
                                 "Unassigned"}
                             </span>
@@ -1162,7 +1376,7 @@ const Settings: React.FC = () => {
                                 className="text-xs bg-white border border-gray-200 px-2 py-1 rounded text-gray-600 shadow-xs flex items-center gap-1"
                               >
                                 <span className="font-semibold">{s.name}</span>
-                                <span className="text-[10px] text-gray-400 border-l border-gray-200 pl-1 ml-1 truncate max-w-[80px]">
+                                <span className="text-[10px] text-gray-400 border-l border-gray-200 pl-1 ml-1 truncate max-w-20">
                                   {getSubjectTeacherName(s, cls)}
                                 </span>
                               </span>
@@ -1310,6 +1524,23 @@ const Settings: React.FC = () => {
                             Current
                           </span>
                         )}
+                        <button
+                          onClick={() => {
+                            if (
+                              confirm(
+                                "Are you sure you want to delete this session? This cannot be undone.",
+                              )
+                            ) {
+                              backendService.deleteSession(sess.id);
+                              refreshData();
+                            }
+                          }}
+                          className="text-red-500 hover:bg-red-50 p-1.5 rounded"
+                          disabled={sess.isActive}
+                          title="Delete session"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -1383,6 +1614,7 @@ const Settings: React.FC = () => {
                 <thead className="bg-gray-50 text-gray-600 text-sm uppercase">
                   <tr>
                     <th className="px-6 py-3">Exam Name</th>
+                    <th className="px-6 py-3">Term</th>
                     <th className="px-6 py-3">Status</th>
                     <th className="px-6 py-3 text-right">Actions</th>
                   </tr>
@@ -1392,6 +1624,9 @@ const Settings: React.FC = () => {
                     <tr key={exam.id} className="hover:bg-gray-50">
                       <td className="px-6 py-3 font-medium text-gray-800">
                         {exam.name}
+                      </td>
+                      <td className="px-6 py-3 text-gray-600 text-sm">
+                        {exam.term || <span className="text-gray-400">—</span>}
                       </td>
                       <td className="px-6 py-3">
                         <span
@@ -1409,7 +1644,7 @@ const Settings: React.FC = () => {
                           {exam.isLocked ? "Locked" : "Open"}
                         </span>
                       </td>
-                      <td className="px-6 py-3 text-right">
+                      <td className="px-6 py-3 text-right flex justify-end gap-2">
                         <button
                           onClick={() => toggleLock(exam.id)}
                           className={`text-primary-600 hover:bg-primary-50 p-2 rounded text-sm font-medium ${
@@ -1421,13 +1656,29 @@ const Settings: React.FC = () => {
                         >
                           {exam.isLocked ? "Unlock" : "Lock"}
                         </button>
+                        <button
+                          onClick={() => {
+                            if (
+                              confirm(
+                                "Delete this exam term? Related marks will be retained but orphaned.",
+                              )
+                            ) {
+                              backendService.deleteExam(exam.id);
+                              refreshData();
+                            }
+                          }}
+                          className="text-red-500 hover:bg-red-50 p-2 rounded"
+                          disabled={isSessionLocked}
+                        >
+                          Delete
+                        </button>
                       </td>
                     </tr>
                   ))}
                   {exams.length === 0 && (
                     <tr>
                       <td
-                        colSpan={3}
+                        colSpan={4}
                         className="px-6 py-4 text-center text-gray-400"
                       >
                         No exams defined for current session
@@ -1488,7 +1739,7 @@ const Settings: React.FC = () => {
                             handleGradingChange(
                               index,
                               "minPercentage",
-                              Number(e.target.value)
+                              Number(e.target.value),
                             )
                           }
                           className="w-full px-3 py-1.5 border border-gray-300 rounded"
@@ -1529,13 +1780,15 @@ const Settings: React.FC = () => {
                     {logs.map((log) => (
                       <tr key={log.id} className="hover:bg-gray-50 text-sm">
                         <td className="px-6 py-3 text-gray-500 whitespace-nowrap">
-                          {new Date(log.timestamp).toLocaleString()}
+                          {new Date(
+                            log.createdAt ?? log.timestamp ?? Date.now(),
+                          ).toLocaleString()}
                         </td>
                         <td className="px-6 py-3 font-medium text-gray-800">
                           {log.action}
                         </td>
                         <td className="px-6 py-3 text-gray-600">
-                          {log.details}
+                          {log.description || log.details}
                         </td>
                         <td className="px-6 py-3 text-gray-500">
                           {log.userName} ({log.role})
@@ -1628,6 +1881,66 @@ const Settings: React.FC = () => {
                   </p>
                 </div>
               </div>
+
+              {/* allow user to change username/full name */}
+              <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 border-t pt-4">
+                <UserIcon className="w-5 h-5 text-primary-600" /> Update Account
+              </h3>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  try {
+                    await backendService.updateUser(currentUser.id, {
+                      username: accountForm.username,
+                      name: accountForm.name,
+                    });
+                    alert("Account details updated");
+                    // refresh stored user
+                    await backendService.getCurrentUser();
+                  } catch (err: any) {
+                    alert(err.message || "Failed to update account");
+                  }
+                }}
+                className="max-w-md space-y-4"
+              >
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={accountForm.name}
+                    onChange={(e) =>
+                      setAccountForm({ ...accountForm, name: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Username
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={accountForm.username}
+                    onChange={(e) =>
+                      setAccountForm({
+                        ...accountForm,
+                        username: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium"
+                >
+                  Save Account
+                </button>
+              </form>
 
               <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 border-t pt-4">
                 <Key className="w-5 h-5 text-primary-600" /> Change Password
@@ -1750,6 +2063,20 @@ const Settings: React.FC = () => {
                       }
                       className="w-full px-3 py-2 border border-secondary-300 rounded-lg focus:ring-2 focus:ring-secondary-500 outline-none"
                       placeholder="e.g. Mid Term"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-secondary-800 mb-1">
+                      Term (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={newExam.term}
+                      onChange={(e) =>
+                        setNewExam({ ...newExam, term: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border border-secondary-300 rounded-lg focus:ring-2 focus:ring-secondary-500 outline-none"
+                      placeholder="e.g. Term 1, Term 2, Final"
                     />
                   </div>
                   <button
@@ -1889,9 +2216,20 @@ const Settings: React.FC = () => {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-              <h3 className="font-bold text-gray-800">Add New Subject</h3>
+              <h3 className="font-bold text-gray-800">
+                {editingSubjectId ? "Edit Subject" : "Add New Subject"}
+              </h3>
               <button
-                onClick={() => setIsSubjectModalOpen(false)}
+                onClick={() => {
+                  setIsSubjectModalOpen(false);
+                  setEditingSubjectId(null);
+                  setNewSubject({
+                    name: "",
+                    totalMarks: 100,
+                    teacherName: "",
+                    components: undefined,
+                  });
+                }}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <X className="w-5 h-5" />
@@ -1913,23 +2251,92 @@ const Settings: React.FC = () => {
                   placeholder="e.g. Mathematics"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Total Marks
+
+              <div className="flex items-center gap-4">
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={!!newSubject.components}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setNewSubject({
+                          ...newSubject,
+                          components: { theory: 70, practical: 30 },
+                        });
+                      } else {
+                        setNewSubject({ ...newSubject, components: undefined });
+                      }
+                    }}
+                  />
+                  <span className="text-sm font-medium">
+                    Split into Theory + Practical (T+P)
+                  </span>
                 </label>
-                <input
-                  type="number"
-                  required
-                  value={newSubject.totalMarks}
-                  onChange={(e) =>
-                    setNewSubject({
-                      ...newSubject,
-                      totalMarks: parseInt(e.target.value),
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
-                />
               </div>
+
+              {newSubject.components ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Theory Marks
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={newSubject.components.theory ?? ""}
+                      onChange={(e) =>
+                        setNewSubject({
+                          ...newSubject,
+                          components: {
+                            ...newSubject.components!,
+                            theory: parseInt(e.target.value) || 0,
+                          },
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Practical Marks
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={newSubject.components.practical ?? ""}
+                      onChange={(e) =>
+                        setNewSubject({
+                          ...newSubject,
+                          components: {
+                            ...newSubject.components!,
+                            practical: parseInt(e.target.value) || 0,
+                          },
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Total Marks
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    value={newSubject.totalMarks}
+                    onChange={(e) =>
+                      setNewSubject({
+                        ...newSubject,
+                        totalMarks: parseInt(e.target.value),
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+                  />
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Default Teacher (Optional)
@@ -1947,11 +2354,19 @@ const Settings: React.FC = () => {
                   at class level.
                 </p>
               </div>
+
               <button
                 type="submit"
-                className="w-full py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium mt-2 shadow-xs transition"
+                disabled={
+                  newSubject.components
+                    ? (newSubject.components.theory || 0) +
+                        (newSubject.components.practical || 0) <=
+                      0
+                    : false
+                }
+                className={`w-full py-2.5 bg-primary-600 text-white rounded-lg ${newSubject.components && (newSubject.components.theory || 0) + (newSubject.components.practical || 0) <= 0 ? "opacity-50 cursor-not-allowed" : "hover:bg-primary-700"} font-medium mt-2 shadow-xs transition`}
               >
-                Create Subject
+                {editingSubjectId ? "Save Changes" : "Create Subject"}
               </button>
             </form>
           </div>

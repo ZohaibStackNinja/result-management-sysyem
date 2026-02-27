@@ -1,7 +1,6 @@
-
 export type Grade = string;
 
-export type UserRole = 'admin' | 'teacher';
+export type UserRole = "admin" | "teacher";
 
 export interface User {
   id: string;
@@ -9,7 +8,7 @@ export interface User {
   password?: string; // Only used for auth checks, not exposed in UI
   name: string;
   role: UserRole;
-  campus?: 'Boys' | 'Girls' | 'Both'; // Added campus assignment
+  campus?: "Boys" | "Girls" | "Both"; // Added campus assignment
   assignedSubjects?: string[]; // Subject IDs the teacher can manage
   assignedClasses?: string[]; // "Class-Section" IDs (e.g. "10-A")
 }
@@ -18,7 +17,7 @@ export interface User {
 export interface Teacher {
   id: string;
   name: string;
-  campus: 'Boys' | 'Girls' | 'Both';
+  campus: "Boys" | "Girls" | "Both";
 }
 
 export interface Session {
@@ -33,14 +32,22 @@ export interface SchoolClass {
   id: string; // "className-section" normalized
   className: string;
   section: string;
-  classTeacherId?: string; // ID of the User (Homeroom Teacher)
-  classTeacherName?: string; // Cached Name
+  classTeacherId?: string; // ID of the User (Homeroom Teacher) - legacy single-campus field
+  classTeacherName?: string; // Cached Name - legacy single-campus field
+  // New: per-campus homeroom teacher overrides (when campus === 'Both')
+  classTeacherBoysId?: string;
+  classTeacherBoysName?: string;
+  classTeacherGirlsId?: string;
+  classTeacherGirlsName?: string;
   sessionId: string;
   subjectIds?: string[]; // IDs of subjects taught in this class
+  campus?: "Boys" | "Girls" | "Both"; // Optional campus for gender-based classes
+  // two-dimensional mapping of subject -> teacher overrides
+  subjectTeachers?: { subjectId: string; teacherName: string }[];
 }
 
 export interface GradingRule {
-  label: string;       // e.g. "A+"
+  label: string; // e.g. "A+"
   minPercentage: number; // e.g. 90
 }
 
@@ -57,13 +64,13 @@ export interface Student {
   id: string;
   rollNumber: string;
   name: string;
-  campus: 'Boys' | 'Girls';
+  campus: "Boys" | "Girls";
   className: string;
   section: string;
   parentPhone?: string; // Optional now
-  attendancePresent?: number; 
-  attendanceTotal?: number;   // Deprecated in favor of ClassAttendance, kept for fallback
-  attendancePercentage?: number; 
+  attendancePresent?: number;
+  attendanceTotal?: number; // Deprecated in favor of ClassAttendance, kept for fallback
+  attendancePercentage?: number;
   sessionId: string; // Scoped to session
 }
 
@@ -72,6 +79,11 @@ export interface Subject {
   name: string;
   totalMarks: number;
   teacherName?: string; // Default teacher
+  // Optional component split (theory + practical) for subjects like Computer
+  components?: {
+    theory?: number;
+    practical?: number;
+  };
 }
 
 // New Interface for Class-Wise Subject Teachers
@@ -87,6 +99,7 @@ export interface ClassSubjectTeacher {
 export interface ExamTerm {
   id: string;
   name: string;
+  term?: string; // e.g., "Term 1", "Term 2", "Midterm", "Final"
   isLocked: boolean;
   sessionId: string; // Scoped to session
 }
@@ -95,13 +108,20 @@ export interface MarkEntry {
   studentId: string;
   subjectId: string;
   examTermId: string;
-  obtainedMarks: number;
+  // For backwards compatibility we keep obtainedMarks optional and introduce theory/practical
+  obtainedMarks?: number;
+  theoryMarks?: number;
+  practicalMarks?: number;
   sessionId: string; // Scoped to session
+  isFinalized?: boolean;
 }
 
 export interface StudentResult {
   student: Student;
-  marks: { [subjectId: string]: number };
+  // Marks can be a simple number or a component object (theory/practical)
+  marks: {
+    [subjectId: string]: number | { theory?: number; practical?: number };
+  };
   totalObtained: number;
   totalMax: number;
   percentage: number;
@@ -110,20 +130,23 @@ export interface StudentResult {
   positionSuffix?: string; // e.g. "st", "nd"
   classAttendanceTotal?: number; // Injected during calculation
   attendance?: {
-      present: number;
-      total: number;
-      percentage: number;
+    present: number;
+    total: number;
+    percentage: number;
   };
 }
 
 export interface AuditLogEntry {
   id: string;
-  timestamp: string;
+  createdAt?: string;
+  timestamp?: string;
   action: string;
-  details: string;
-  userId: string;
-  userName: string;
-  role: UserRole;
+  description?: string;
+  details?: string;
+  user?: string;
+  userId?: string;
+  userName?: string;
+  role?: UserRole;
 }
 
 export interface ChartData {

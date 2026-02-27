@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { storageService } from "../../services/storageService";
+import backendService from "../../services/backendService";
 import {
   Student,
   Subject,
@@ -44,12 +44,15 @@ const SingleSubjectTeacherModal: React.FC<{
   const [teachers, setTeachers] = useState<Teacher[]>([]);
 
   useEffect(() => {
-    setTeachers(storageService.getTeachers());
+    (async () => {
+      const loadedTeachers = await backendService.getTeachers();
+      setTeachers(loadedTeachers);
+    })();
   }, []);
 
   const handleSave = () => {
     try {
-      storageService.assignClassTeacher({
+      backendService.assignClassTeacher({
         id: `${className}-${section}-${subject.id}`,
         className,
         section,
@@ -139,7 +142,9 @@ const PrintableSheet: React.FC<{
   onClose: () => void;
   examName: string;
   subjectName?: string;
+  subjectId?: string;
   session: string;
+  subjects: Subject[];
 }> = ({
   className,
   section,
@@ -147,13 +152,15 @@ const PrintableSheet: React.FC<{
   onClose,
   examName,
   subjectName,
+  subjectId,
   session,
+  subjects,
 }) => {
-  const sessionName = session?.name;
+  const sessionName = (session as any)?.name || session || "";
   const printRef = useRef<HTMLDivElement>(null);
 
   const sortedStudents = [...students].sort((a, b) =>
-    a.rollNumber.localeCompare(b.rollNumber)
+    a.rollNumber.localeCompare(b.rollNumber),
   );
   const itemsPerCol = 30;
   const col1 = sortedStudents.slice(0, itemsPerCol);
@@ -171,7 +178,10 @@ const PrintableSheet: React.FC<{
     window.location.reload(); // restore React safely
   };
   return (
-    <div  ref={printRef} className="fixed inset-0 bg-white z-100 overflow-auto print:break-inside-avoid print:break-after-avoid text-slate-900">
+    <div
+      ref={printRef}
+      className="fixed inset-0 bg-white z-100 overflow-auto print:break-inside-avoid print:break-after-avoid text-slate-900"
+    >
       <div className="no-print p-4 bg-gray-100 border-b flex justify-between items-center print:hidden sticky top-0 shadow-xs">
         <h2 className="font-bold text-gray-700 flex items-center gap-2">
           <Printer className="w-5 h-5 text-gray-500" /> Print Award List
@@ -192,15 +202,17 @@ const PrintableSheet: React.FC<{
         </div>
       </div>
 
-      <div className="max-w-[21cm]
+      <div
+        className="max-w-[21cm]
     mx-auto
     bg-white
     min-h-screen
     p-8
-    print:pt-[3mm]
-    print:pb-[3mm]
-    print:px-[10mm]
-    print:max-w-none">
+    print:pt-0
+    print:pb-0
+    print:px-[5mm]
+    print:max-w-none"
+      >
         <div className="text-center mb-6">
           <h1 className="text-xl font-bold uppercase tracking-wider">
             New Covenant School System
@@ -255,10 +267,26 @@ const PrintableSheet: React.FC<{
 
         <div className="flex gap-6">
           <div className="flex-1">
-            <TableCol data={col1} startIdx={0} />
+            <TableCol
+              data={col1}
+              startIdx={0}
+              showTP={
+                !!subjects.find(
+                  (s) => s.id === subjectId || s.name === subjectName,
+                )?.components
+              }
+            />
           </div>
           <div className="flex-1">
-            <TableCol data={col2} startIdx={itemsPerCol} />
+            <TableCol
+              data={col2}
+              startIdx={itemsPerCol}
+              showTP={
+                !!subjects.find(
+                  (s) => s.id === subjectId || s.name === subjectName,
+                )?.components
+              }
+            />
           </div>
         </div>
 
@@ -281,14 +309,21 @@ const PrintableSheet: React.FC<{
   );
 };
 
-const TableCol = ({ data, startIdx }: any) => (
+const TableCol = ({ data, startIdx, showTP = false }: any) => (
   <table className="w-full border-collapse border border-black text-xs">
     <thead>
       <tr className="bg-gray-100 print:bg-gray-50">
         <th className="border border-black p-1 w-8 text-center">S.No</th>
         <th className="border border-black p-1 w-16 text-center">Roll No</th>
         <th className="border border-black p-1 text-left pl-2">Name</th>
-        <th className="border border-black p-1 w-16 text-center">Marks</th>
+        {showTP ? (
+          <>
+            <th className="border border-black p-1 w-12 text-center">T</th>
+            <th className="border border-black p-1 w-12 text-center">P</th>
+          </>
+        ) : (
+          <th className="border border-black p-1 w-16 text-center">Marks</th>
+        )}
       </tr>
     </thead>
     <tbody>
@@ -303,7 +338,14 @@ const TableCol = ({ data, startIdx }: any) => (
           <td className="border border-black p-0 pl-2 truncate max-w-37.5 uppercase">
             {s.name}
           </td>
-          <td className="border border-black p-0"></td>
+          {showTP ? (
+            <>
+              <td className="border border-black p-0"></td>
+              <td className="border border-black p-0"></td>
+            </>
+          ) : (
+            <td className="border border-black p-0"></td>
+          )}
         </tr>
       ))}
       {Array.from({ length: Math.max(0, 30 - data.length) }).map((_, i) => (
@@ -313,7 +355,14 @@ const TableCol = ({ data, startIdx }: any) => (
           </td>
           <td className="border border-black p-0"></td>
           <td className="border border-black p-0"></td>
-          <td className="border border-black p-0"></td>
+          {showTP ? (
+            <>
+              <td className="border border-black p-0"></td>
+              <td className="border border-black p-0"></td>
+            </>
+          ) : (
+            <td className="border border-black p-0"></td>
+          )}
         </tr>
       ))}
     </tbody>
@@ -329,11 +378,11 @@ const AttendanceSheet: React.FC<{
 }> = ({ className, section, students, onClose, examName, session }) => {
   const printRef = useRef<HTMLDivElement>(null);
 
-  const sessionName = session?.name;
+  const sessionName = (session as any)?.name || session || "";
 
   // Sort by roll number
   const sortedStudents = [...students].sort((a, b) =>
-    a.rollNumber.localeCompare(b.rollNumber)
+    a.rollNumber.localeCompare(b.rollNumber),
   );
 
   // Split into 2 columns (max 30 per column)
@@ -381,9 +430,9 @@ const AttendanceSheet: React.FC<{
     bg-white
     min-h-screen
     p-8
-    print:pt-[10mm]
-    print:pb-[12mm]
-    print:px-[10mm]
+    print:pt-0
+    print:pb-0
+    print:px-[5mm]
     print:max-w-none"
       >
         <div className="text-center mb-6">
@@ -491,7 +540,7 @@ const AttendanceTableCol = ({ data, startIdx }: any) => (
     </tbody>
   </table>
 );
-const MarksEntry: React.FC = () => {
+const MarksEntry: React.FC<{ user?: any }> = ({ user }) => {
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -514,19 +563,18 @@ const MarksEntry: React.FC = () => {
   const [saved, setSaved] = useState(false);
   const [showMarkingSheet, setShowMarkingSheet] = useState(false);
   const [isSessionLocked, setIsSessionLocked] = useState(false);
-const [isTermLocked, setIsTermLocked] = useState(false);
-
+  const [isTermLocked, setIsTermLocked] = useState(false);
 
   // Attendance State
   const [totalAttendanceDays, setTotalAttendanceDays] = useState<number>(0);
-const [isMarksFinalized, setIsMarksFinalized] = useState(false);
+  const [isMarksFinalized, setIsMarksFinalized] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [session, setSession] = useState("");
-  const currentUser = storageService.getCurrentUser();
+  const [session, setSession] = useState<any>(undefined);
+  const currentUser = user;
   const isAdmin = currentUser?.role === "admin";
-const isTeacher = currentUser?.role === "teacher";
-const isMarksLockedForTeacher = isTeacher && isMarksFinalized;
-const isLocked = isSessionLocked || isTermLocked || isMarksLockedForTeacher;
+  const isTeacher = currentUser?.role === "teacher";
+  const isMarksLockedForTeacher = isTeacher && isMarksFinalized;
+  const isLocked = isSessionLocked || isTermLocked || isMarksLockedForTeacher;
   const ATTENDANCE_SUBJECT_ID = "term-attendance";
   const [search, setSearch] = useState("");
   const [isAttendanceSheetOpen, setIsAttendanceSheetOpen] = useState(false);
@@ -543,61 +591,72 @@ const isLocked = isSessionLocked || isTermLocked || isMarksLockedForTeacher;
   });
   useEffect(() => {
     refreshData();
-  }, [selectedClass,selectedSection,selectedExam]);
+  }, [selectedClass, selectedSection, selectedExam]);
 
-  const refreshData = () => {
-    const loadedStudents = storageService.getStudents();
-    const loadedClasses = storageService.getClasses();
-    setAllStudents(loadedStudents);
-    setSubjects(storageService.getSubjects());
-    setSchoolClasses(loadedClasses);
-    const loadedExams = storageService.getExams();
-    setExams(loadedExams);
-    setIsSessionLocked(storageService.isSessionLocked());
-    setSession(storageService.getActiveSession());
-    const exam = exams.find(e => e.id === selectedExam);
-  setIsTermLocked(!!exam?.isLocked);
+  const refreshData = async () => {
+    try {
+      const [loadedStudents, loadedClasses, loadedSubjects, loadedExams] =
+        await Promise.all([
+          backendService.getStudents(),
+          backendService.getClasses(),
+          backendService.getSubjects(),
+          backendService.getExams(),
+        ]);
+      setAllStudents(loadedStudents);
+      setSubjects(loadedSubjects);
+      setSchoolClasses(loadedClasses);
+      setExams(loadedExams);
+      setIsSessionLocked(await backendService.isSessionLocked());
+      setSession(await backendService.getActiveSession());
+      const exam = loadedExams.find((e) => e.id === selectedExam);
+      setIsTermLocked(!!exam?.isLocked);
 
+      if (loadedExams.length > 0 && !selectedExam)
+        setSelectedExam(loadedExams[0].id);
+      if (loadedSubjects.length > 0 && !selectedSubject) {
+        setSelectedSubject(loadedSubjects[0].id);
+      }
 
-
-    if (loadedExams.length > 0 && !selectedExam)
-      setSelectedExam(loadedExams[0].id);
-    if (storageService.getSubjects().length > 0 && !selectedSubject)
-      setSelectedSubject(storageService.getSubjects()[0].id);
-
-    // Auto-select first available class if nothing selected
-    if (!selectedClass && !selectedSection) {
-      if (loadedClasses.length > 0) {
-        setSelectedClass(loadedClasses[0].className);
-        setSelectedSection(loadedClasses[0].section);
-      } else if (loadedStudents.length > 0) {
-        const uniqueClasses = Array.from(
-          new Set(loadedStudents.map((s) => s.className))
-        ).sort();
-        if (uniqueClasses.length > 0) {
-          const cls = uniqueClasses[0];
-          const s = loadedStudents.find((st) => st.className === cls);
-          if (s) {
-            setSelectedClass(s.className);
-            setSelectedSection(s.section);
+      if (!selectedClass && !selectedSection) {
+        if (loadedClasses.length > 0) {
+          setSelectedClass(loadedClasses[0].className);
+          setSelectedSection(loadedClasses[0].section || "");
+        } else if (loadedStudents.length > 0) {
+          const uniqueClasses = Array.from(
+            new Set(loadedStudents.map((s: any) => s.className)),
+          ).sort();
+          if (uniqueClasses.length > 0) {
+            const cls = uniqueClasses[0];
+            const s = loadedStudents.find((st: any) => st.className === cls);
+            if (s) {
+              setSelectedClass(s.className);
+              setSelectedSection(s.section);
+            }
           }
         }
       }
+    } catch (err) {
+      console.error("Failed to refresh data:", err);
     }
   };
-useEffect(() => {
-  if (!selectedExam) return;
-  const exam = storageService.getExams().find(e => e.id === selectedExam);
-  setIsTermLocked(!!exam?.isLocked);
-}, [selectedExam]);
+  useEffect(() => {
+    if (!selectedExam) return;
+    const exam = exams.find((e) => e.id === selectedExam);
+    setIsTermLocked(!!exam?.isLocked);
+  }, [selectedExam, exams]);
   useEffect(() => {
     let filtered = allStudents;
-    if (selectedCampus)
+    if (selectedCampus) {
       filtered = filtered.filter((s) => s.campus === selectedCampus);
+    }
     if (selectedClass) {
-      filtered = filtered.filter(
-        (s) => s.className === selectedClass && s.section === selectedSection
-      );
+      filtered = filtered.filter((s) => {
+        if (s.className !== selectedClass) return false;
+        if (selectedSection) {
+          return s.section === selectedSection;
+        }
+        return true;
+      });
     }
     // Sort by roll number for easier entry
     filtered.sort((a, b) => a.rollNumber.localeCompare(b.rollNumber));
@@ -606,46 +665,70 @@ useEffect(() => {
 
   useEffect(() => {
     if (selectedExam && selectedSubject) {
-      if (selectedSubject === ATTENDANCE_SUBJECT_ID) {
-        // Attendance Mode: Load specific exam term attendance
-        const config = storageService.getClassAttendance(
-          selectedClass,
-          selectedSection,
-          selectedExam
-        );
-        setTotalAttendanceDays(config?.totalDays || 100);
-
-        const existingMarks = storageService.getMarks(selectedExam);
-        const buffer: { [key: string]: number } = {};
-
-        allStudents.forEach((student) => {
-          // Look for attendance records specifically for this exam term
-          const mark = existingMarks.find(
-            (m) =>
-              m.studentId === student.id &&
-              m.subjectId === ATTENDANCE_SUBJECT_ID
+      (async () => {
+        if (selectedSubject === ATTENDANCE_SUBJECT_ID) {
+          // Attendance Mode: Load specific exam term attendance
+          const config = await backendService.getClassAttendance(
+            selectedClass,
+            selectedSection,
+            selectedExam,
           );
-          if (mark) {
-            buffer[student.id] = mark.obtainedMarks;
-          }
-        });
-        setMarksBuffer(buffer);
-      } else {
-        // Normal Marks Mode
-        const existingMarks = storageService.getMarks(selectedExam);
-        const buffer: { [key: string]: number } = {};
+          setTotalAttendanceDays(config?.totalDays || 100);
 
-        allStudents.forEach((student) => {
-          const mark = existingMarks.find(
-            (m) => m.studentId === student.id && m.subjectId === selectedSubject
-          );
-          if (mark) {
-            buffer[student.id] = mark.obtainedMarks;
-          }
-        });
-        setMarksBuffer(buffer);
-      }
-      setSaved(false);
+          const existingMarks = await backendService.getMarks({
+            examId: selectedExam,
+          });
+          const buffer: { [key: string]: number } = {};
+
+          allStudents.forEach((student) => {
+            // Look for attendance records specifically for this exam term
+            const mark = existingMarks.find(
+              (m) =>
+                m.studentId === student.id &&
+                m.subjectId === ATTENDANCE_SUBJECT_ID,
+            );
+            if (mark && mark.obtainedMarks !== undefined) {
+              buffer[student.id] = mark.obtainedMarks;
+            }
+          });
+          setMarksBuffer(buffer);
+        } else {
+          const existingMarks = await backendService.getMarks({
+            examId: selectedExam,
+          });
+          const buffer: {
+            [key: string]: number | { theory?: number; practical?: number };
+          } = {};
+
+          // Determine current subject config (components may be defined)
+          const curSubject = subjects.find((s) => s.id === selectedSubject);
+
+          allStudents.forEach((student) => {
+            const mark = existingMarks.find(
+              (m) =>
+                m.studentId === student.id && m.subjectId === selectedSubject,
+            );
+            if (mark) {
+              if (curSubject && curSubject.components) {
+                buffer[student.id] = {
+                  theory:
+                    mark.theoryMarks !== undefined
+                      ? mark.theoryMarks
+                      : mark.obtainedMarks,
+                  practical:
+                    mark.practicalMarks !== undefined ? mark.practicalMarks : 0,
+                };
+              } else {
+                if (mark.obtainedMarks !== undefined) {
+                  buffer[student.id] = mark.obtainedMarks;
+                }
+              }
+            }
+          });
+          setMarksBuffer(buffer as any);
+        }
+        setSaved(false);
+      })();
     }
   }, [
     selectedExam,
@@ -656,26 +739,60 @@ useEffect(() => {
     students,
   ]);
 
-  // Derived Data
-  const classes = Array.from(
-    new Set(allStudents.map((s) => s.className))
-  ).sort();
-  // We need to fetch sections based on selected class
+  const classes = useMemo(() => {
+    const fromConfig = schoolClasses
+      .filter((c: any) => c.campus === selectedCampus || c.campus === "Both")
+      .map((c) => c.className);
+    const fromStudents = allStudents
+      .filter((s) => s.campus === selectedCampus || selectedCampus === "")
+      .map((s) => s.className);
+    const set = new Set<string>([...fromConfig, ...fromStudents]);
+    return Array.from(set).sort();
+  }, [selectedCampus, schoolClasses, allStudents]);
+
   const sections = useMemo(() => {
     if (!selectedClass) return [];
-    const classStudents = allStudents.filter(
-      (s) => s.className === selectedClass
-    );
-    return Array.from(
-      new Set(classStudents.map((s) => s.section || ""))
-    ).sort();
-  }, [selectedClass, allStudents]);
+    const configSections = schoolClasses
+      .filter(
+        (c) =>
+          c.className === selectedClass &&
+          (c.campus === selectedCampus || c.campus === "Both"),
+      )
+      .map((c) => c.section || "");
+    const studentSections = allStudents
+      .filter((s) => s.className === selectedClass)
+      .map((s) => s.section || "");
+    const set = new Set<string>([...configSections, ...studentSections]);
+    return Array.from(set).sort();
+  }, [selectedClass, selectedCampus, schoolClasses, allStudents]);
+
+  useEffect(() => {
+    if (!selectedClass) return;
+    const hasSections = sections.some((s) => Boolean(s));
+    // For classes without sections, keep section empty so downstream filters use class-only logic.
+    if (!hasSections && selectedSection !== "") {
+      setSelectedSection("");
+      return;
+    }
+    // When class has sections, pick the first available section if current one is invalid.
+    if (
+      hasSections &&
+      selectedSection &&
+      !sections.includes(selectedSection)
+    ) {
+      const firstNonEmpty = sections.find((s) => Boolean(s)) || "";
+      setSelectedSection(firstNonEmpty);
+    }
+  }, [selectedClass, sections, selectedSection]);
 
   const filteredSubjects = useMemo(() => {
     let relevant = [...subjects];
     // Filter by class config if exists
     const clsConfig = schoolClasses.find(
-      (c) => c.className === selectedClass && c.section === selectedSection
+      (c) =>
+        c.className === selectedClass &&
+        c.section === selectedSection &&
+        (c.campus === selectedCampus || c.campus === "Both"),
     );
     if (clsConfig && clsConfig.subjectIds && clsConfig.subjectIds.length > 0) {
       relevant = subjects.filter((s) => clsConfig.subjectIds?.includes(s.id));
@@ -690,7 +807,7 @@ useEffect(() => {
     });
 
     return relevant.filter((s) =>
-      s.name.toLowerCase().includes(subjectSearch.toLowerCase())
+      (s.name || "").toLowerCase().includes(subjectSearch.toLowerCase()),
     );
   }, [
     subjects,
@@ -701,21 +818,92 @@ useEffect(() => {
     totalAttendanceDays,
   ]);
 
+  useEffect(() => {
+    if (!filteredSubjects.length) {
+      if (selectedSubject) setSelectedSubject("");
+      return;
+    }
+    if (filteredSubjects.length === 1) {
+      const onlySubjectId = filteredSubjects[0].id;
+      if (selectedSubject !== onlySubjectId) {
+        setSelectedSubject(onlySubjectId);
+      }
+      return;
+    }
+    const exists = filteredSubjects.some((s) => s.id === selectedSubject);
+    if (!exists) {
+      setSelectedSubject(filteredSubjects[0].id);
+    }
+  }, [filteredSubjects, selectedSubject]);
+
   const currentSubject = filteredSubjects.find((s) => s.id === selectedSubject);
 
   const currentTeacherName = useMemo(() => {
     if (!selectedSubject || !selectedClass) return "Unassigned";
     if (selectedSubject === ATTENDANCE_SUBJECT_ID) return "Class Teacher";
-    return storageService.getSubjectTeacher(
-      selectedSubject,
-      selectedClass,
-      selectedSection
+    // look into class configuration for override
+    const clsConfig = schoolClasses.find(
+      (c) => c.className === selectedClass && c.section === selectedSection,
     );
-  }, [selectedSubject, selectedClass, selectedSection, isTeacherModalOpen]); // Re-calc when modal closes/saves
+    if (clsConfig && clsConfig.subjectTeachers) {
+      const override = clsConfig.subjectTeachers.find(
+        (t: any) => t.subjectId === selectedSubject,
+      );
+      if (override && override.teacherName) return override.teacherName;
+    }
+    // fallback to subject default name
+    const subj = subjects.find((s) => s.id === selectedSubject);
+    return subj?.teacherName || "Unassigned";
+  }, [
+    selectedSubject,
+    selectedClass,
+    selectedSection,
+    schoolClasses,
+    subjects,
+    isTeacherModalOpen,
+  ]); // Re-calc when modal closes/saves
 
-  const handleMarkChange = (studentId: string, value: string) => {
+  const handleMarkChange = (
+    studentId: string,
+    value: string,
+    part?: "theory" | "practical",
+  ) => {
     if (isLocked) return;
-    const numVal = parseInt(value);
+    const numVal = value === "" ? NaN : parseInt(value);
+
+    // If subject is component split, validate against component max
+    const componentCfg = subjects.find(
+      (s) => s.id === selectedSubject,
+    )?.components;
+
+    if (part && componentCfg) {
+      const max =
+        part === "theory"
+          ? componentCfg.theory || 0
+          : componentCfg.practical || 0;
+
+      if (value === "" || isNaN(numVal)) {
+        const newBuffer = { ...marksBuffer } as any;
+        const existing = (newBuffer[studentId] as any) || {};
+        delete existing[part];
+        if (Object.keys(existing).length === 0) delete newBuffer[studentId];
+        else newBuffer[studentId] = existing;
+        setMarksBuffer(newBuffer);
+        return;
+      }
+
+      if (!isNaN(numVal) && numVal >= 0 && numVal <= max) {
+        setMarksBuffer((prev) => {
+          const existing = (prev[studentId] as any) || {};
+          return { ...prev, [studentId]: { ...existing, [part]: numVal } };
+        });
+        setSaved(false);
+      }
+
+      return;
+    }
+
+    // Non-component subject (single value)
     const maxMarks = currentSubject?.totalMarks || 100;
 
     if (value === "" || isNaN(numVal)) {
@@ -731,52 +919,64 @@ useEffect(() => {
     }
   };
 
-  const handleSave = () => {
-     if (isLocked) return;
+  const handleSave = async () => {
+    if (isLocked) return;
     setLoading(true);
+    try {
+      if (selectedSubject === ATTENDANCE_SUBJECT_ID) {
+        await backendService.saveBatchAttendance(
+          selectedClass,
+          selectedSection,
+          totalAttendanceDays,
+          marksBuffer,
+          selectedExam,
+        );
+      } else {
+        // Save Normal Marks
+        const curSubject = subjects.find((s) => s.id === selectedSubject);
 
-    if (selectedSubject === ATTENDANCE_SUBJECT_ID) {
-      // Save Attendance Batch for this specific Exam Term
-      setTimeout(() => {
-        try {
-          storageService.saveBatchAttendance(
-            selectedClass,
-            selectedSection,
-            totalAttendanceDays,
-            marksBuffer,
-            selectedExam
-          );
-          setLoading(false);
-          setSaved(true);
-          setTimeout(() => setSaved(false), 3000);
-        } catch (e) {
-          alert("Failed to save attendance.");
-          setLoading(false);
-        }
-      }, 500);
-    } else {
-      // Save Normal Marks
-      const entries: MarkEntry[] = Object.entries(marksBuffer).map(
-        ([studentId, score]) => ({
-          studentId,
-          subjectId: selectedSubject,
-          examTermId: selectedExam,
-          obtainedMarks: score as number,
-          sessionId: "", // Injected by service
-          isFinalized: isTeacher ? true : false,
-        })
-      );
+        const entries: MarkEntry[] = Object.entries(marksBuffer).map(
+          ([studentId, scoreOrObj]) => {
+            if (curSubject && curSubject.components) {
+              const obj = (scoreOrObj as any) || {};
+              const th = obj.theory || 0;
+              const pr = obj.practical || 0;
+              return {
+                studentId,
+                subjectId: selectedSubject,
+                examTermId: selectedExam,
+                obtainedMarks: th + pr,
+                theoryMarks: obj.theory,
+                practicalMarks: obj.practical,
+                sessionId: "",
+                isFinalized: isTeacher ? true : false,
+              } as MarkEntry;
+            }
 
-      setTimeout(() => {
-        storageService.saveMarks(entries);
-        setLoading(false);
-        setSaved(true);
-        setTimeout(() => setSaved(false), 3000);
-      }, 500);
+            return {
+              studentId,
+              subjectId: selectedSubject,
+              examTermId: selectedExam,
+              obtainedMarks: scoreOrObj as number,
+              sessionId: "",
+              isFinalized: isTeacher ? true : false,
+            } as MarkEntry;
+          },
+        );
+
+        await backendService.saveMarks(entries);
+      }
+
+      setSaved(true);
+      if (isTeacher) {
+        setIsMarksFinalized(true);
+      }
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e: any) {
+      alert(e?.message || "Failed to save data.");
+    } finally {
+      setLoading(false);
     }
-    if (isTeacher) {
-    setIsMarksFinalized(true);
-  }
   };
 
   const handleCSVImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -799,7 +999,7 @@ useEffect(() => {
 
         if (roll && marks !== undefined && marks !== "") {
           const student = students.find(
-            (s) => s.rollNumber === roll.toString()
+            (s) => s.rollNumber === roll.toString(),
           );
           if (student) {
             const num = parseInt(marks);
@@ -817,7 +1017,7 @@ useEffect(() => {
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (e) {
       alert(
-        "Error parsing CSV. Please ensure columns: RollNo, Marks (or Subject Name)"
+        "Error parsing CSV. Please ensure columns: RollNo, Marks (or Subject Name)",
       );
     }
   };
@@ -838,27 +1038,27 @@ useEffect(() => {
   return (
     <div className="space-y-6">
       {isLocked && (
-  <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r shadow-xs flex items-start gap-3 mb-6">
-    <Lock className="w-5 h-5 text-red-600 mt-0.5" />
-    <div>
-      <h3 className="text-red-800 font-bold">
-         {isTermLocked && isSessionLocked
-    ? "Session and Term are Locked"
-    : isTermLocked
-    ? "Term is Locked"
-    : "Session is Locked"}
-      </h3>
-      <p className="text-red-700 text-sm">
-       {isTermLocked && isSessionLocked
-  ? "Both the session and the term are locked. All academic records are read-only."
-  : isTermLocked
-  ? "This term has been finalized. All academic records are read-only."
-  : "You are viewing an archived session. Add, Edit, and Delete actions are disabled."}
-      </p>
-    </div>
-  </div>
-)}
-      
+        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r shadow-xs flex items-start gap-3 mb-6">
+          <Lock className="w-5 h-5 text-red-600 mt-0.5" />
+          <div>
+            <h3 className="text-red-800 font-bold">
+              {isTermLocked && isSessionLocked
+                ? "Session and Term are Locked"
+                : isTermLocked
+                  ? "Term is Locked"
+                  : "Session is Locked"}
+            </h3>
+            <p className="text-red-700 text-sm">
+              {isTermLocked && isSessionLocked
+                ? "Both the session and the term are locked. All academic records are read-only."
+                : isTermLocked
+                  ? "This term has been finalized. All academic records are read-only."
+                  : "You are viewing an archived session. Add, Edit, and Delete actions are disabled."}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* 1. TOP BAR: Global Actions & Filters */}
       <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs space-y-5">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -1126,11 +1326,30 @@ useEffect(() => {
                 <tbody className="divide-y divide-gray-100 text-sm">
                   {students.length > 0 ? (
                     students.map((student, index) => {
-                      const score = marksBuffer[student.id];
+                      const raw = marksBuffer[student.id];
+                      // Compute combined score and max for proper fail detection
+                      const curSubject = subjects.find(
+                        (s) => s.id === selectedSubject,
+                      );
+                      let combinedScore = 0;
+                      let maxForRow = curSubject
+                        ? curSubject.totalMarks ||
+                          (curSubject.components?.theory || 0) +
+                            (curSubject.components?.practical || 0)
+                        : 100;
+
+                      if (curSubject && curSubject.components) {
+                        const obj = (raw as any) || {};
+                        combinedScore =
+                          (obj.theory || 0) + (obj.practical || 0);
+                      } else {
+                        combinedScore = (raw as number) || 0;
+                      }
+
                       const isFail =
                         selectedSubject !== ATTENDANCE_SUBJECT_ID &&
-                        score !== undefined &&
-                        score < currentSubject!.totalMarks * 0.4;
+                        raw !== undefined &&
+                        combinedScore < maxForRow * 0.4;
 
                       return (
                         <tr
@@ -1144,30 +1363,82 @@ useEffect(() => {
                             {student.name}
                           </td>
                           <td className="px-6 py-2 text-center bg-gray-50/50">
-                            <input
-                              id={`mark-input-${index}`}
-                              type="number"
-                              min="0"
-                              max={currentSubject?.totalMarks}
-                              disabled={isLocked}
-                              value={score ?? ""}
-                              onChange={(e) =>
-                                handleMarkChange(student.id, e.target.value)
-                              }
-                              onKeyDown={(e) => handleKeyDown(e, index)}
-                              className={`w-28 text-center py-2 px-2 rounded-lg border-2 focus:ring-4 focus:ring-primary-100 outline-none transition font-bold text-xl
-                                                            ${
-                                                              score ===
-                                                              undefined
-                                                                ? "border-gray-200 bg-white focus:border-primary-500"
-                                                                : isFail
-                                                                ? "border-red-200 bg-red-50 text-red-600 focus:border-red-500"
-                                                                : "border-primary-500 bg-white text-primary-700"
-                                                            }
-                                                       `}
-                              placeholder="-"
-                              autoFocus={index === 0}
-                            />
+                            {curSubject && curSubject.components ? (
+                              <div className="flex items-center gap-2 justify-center">
+                                <div className="flex flex-col items-center">
+                                  <span className="text-[10px] text-gray-500">
+                                    T
+                                  </span>
+                                  <input
+                                    id={`mark-input-${index}-t`}
+                                    type="number"
+                                    min={0}
+                                    max={curSubject.components?.theory}
+                                    disabled={isLocked}
+                                    value={(raw as any)?.theory ?? ""}
+                                    onChange={(e) =>
+                                      handleMarkChange(
+                                        student.id,
+                                        e.target.value,
+                                        "theory",
+                                      )
+                                    }
+                                    className={`w-20 text-center py-1 px-1 rounded-lg border-2 focus:ring-2 focus:ring-primary-50 outline-none transition font-bold text-sm ${(raw as any)?.theory === undefined ? "border-gray-200 bg-white" : isFail ? "border-red-200 bg-red-50 text-red-600" : "border-primary-500 bg-white text-primary-700"}`}
+                                  />
+                                </div>
+
+                                <div className="flex flex-col items-center">
+                                  <span className="text-[10px] text-gray-500">
+                                    P
+                                  </span>
+                                  <input
+                                    id={`mark-input-${index}-p`}
+                                    type="number"
+                                    min={0}
+                                    max={curSubject.components?.practical}
+                                    disabled={isLocked}
+                                    value={(raw as any)?.practical ?? ""}
+                                    onChange={(e) =>
+                                      handleMarkChange(
+                                        student.id,
+                                        e.target.value,
+                                        "practical",
+                                      )
+                                    }
+                                    className={`w-20 text-center py-1 px-1 rounded-lg border-2 focus:ring-2 focus:ring-primary-50 outline-none transition font-bold text-sm ${(raw as any)?.practical === undefined ? "border-gray-200 bg-white" : isFail ? "border-red-200 bg-red-50 text-red-600" : "border-primary-500 bg-white text-primary-700"}`}
+                                  />
+                                </div>
+
+                                <div className="ml-2 text-xs font-bold">
+                                  {combinedScore}/{maxForRow}
+                                </div>
+                              </div>
+                            ) : (
+                              <input
+                                id={`mark-input-${index}`}
+                                type="number"
+                                min="0"
+                                max={currentSubject?.totalMarks}
+                                disabled={isLocked}
+                                value={raw ?? ""}
+                                onChange={(e) =>
+                                  handleMarkChange(student.id, e.target.value)
+                                }
+                                onKeyDown={(e) => handleKeyDown(e, index)}
+                                className={`w-28 text-center py-2 px-2 rounded-lg border-2 focus:ring-4 focus:ring-primary-100 outline-none transition font-bold text-xl
+                                                              ${
+                                                                raw ===
+                                                                undefined
+                                                                  ? "border-gray-200 bg-white focus:border-primary-500"
+                                                                  : isFail
+                                                                    ? "border-red-200 bg-red-50 text-red-600 focus:border-red-500"
+                                                                    : "border-primary-500 bg-white text-primary-700"
+                                                              }
+                                                         `}
+                                placeholder="-"
+                                autoFocus={index === 0}
+                              />
+                            )}
                           </td>
                         </tr>
                       );
@@ -1250,7 +1521,9 @@ useEffect(() => {
           onClose={() => setShowMarkingSheet(false)}
           examName={exams.find((e) => e.id === selectedExam)?.name || "Exam"}
           subjectName={currentSubject?.name}
+          subjectId={selectedSubject}
           session={session}
+          subjects={subjects}
         />
       )}
       {isAttendanceSheetOpen && (

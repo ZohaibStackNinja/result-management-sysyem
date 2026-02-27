@@ -35,9 +35,64 @@
 }
 
 /* Your print styles can stay */
-@media print {
-  @page { size: A4 portrait; margin: 0.5cm; }
+/* @media print {
+  @page { size: A4 portrait; margin:12mm; }
   .no-print { display: none !important; }
   .print-only { display: block !important; }
+  .print\:break-after-page {
+    break-after: page;
+    page-break-after: always; 
+  }
   body { background: white; print-color-adjust: exact; }
+} */
+/* @media print {
+  body * {
+    visibility: hidden;
+  }
+
+  #print-root,
+  #print-root * {
+    visibility: visible;
+  }
+
+  #print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  .print-page {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    margin: 0;
+    background: white;
+  }
+} */
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .print-page {
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .print-page:last-child {
+    page-break-after: auto;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }

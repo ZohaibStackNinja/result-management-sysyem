@@ -24,8 +24,8 @@ import Reports from "./components/Reports";
 import StudentManager from "./components/StudentManager";
 import Settings from "./components/Settings";
 import Login from "./components/Login";
-import { storageService } from "../services/storageService";
 import { User, Session } from "../types";
+import backendService from "../services/backendService";
 
 const SidebarLink = ({ to, icon: Icon, label, active }: any) => (
   <Link
@@ -57,11 +57,19 @@ const Layout = ({
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeSession, setActiveSession] = useState<Session | undefined>(
-    undefined
+    undefined,
   );
 
   useEffect(() => {
-    setActiveSession(storageService.getActiveSession());
+    const load = async () => {
+      try {
+        const s = await backendService.getActiveSession();
+        setActiveSession(s || undefined);
+      } catch (e) {
+        setActiveSession(undefined);
+      }
+    };
+    load();
   }, []);
 
   if (!user) return null;
@@ -169,7 +177,7 @@ const Layout = ({
           </h2>
 
           <div className="flex items-center gap-4">
-            <div className="flex flex-col items-end hidden sm:block">
+            <div className="hidden sm:flex flex-col items-end">
               <span className="text-sm font-bold text-slate-800">
                 {user.name}
               </span>
@@ -232,23 +240,58 @@ const RoleBasedRoute = ({
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // Initialize user from backend on app load
   useEffect(() => {
-    // Check session
-    const user = storageService.getCurrentUser();
-    if (user) {
-      setCurrentUser(user);
-    }
+    const initializeUser = async () => {
+      try {
+        // Try to fetch current user from backend
+        if (backendService.isAuthenticated()) {
+          const user = await backendService.getCurrentUser();
+          if (user) {
+            setCurrentUser(user as User);
+          } else {
+            // Token is invalid, clear it
+            backendService.logout();
+            setCurrentUser(null);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to initialize user:", err);
+        backendService.logout();
+        setCurrentUser(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initializeUser();
   }, []);
 
   const handleLogin = (user: User) => {
     setCurrentUser(user);
   };
 
-  const handleLogout = () => {
-    storageService.logout();
+  const handleLogout = async () => {
+    try {
+      await backendService.logout();
+    } catch (err) {
+      console.error("Logout error:", err);
+    }
     setCurrentUser(null);
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-brand-bg">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return <Login onLogin={handleLogin} />;
@@ -258,13 +301,11 @@ const App: React.FC = () => {
     <Router>
       <Layout onLogout={handleLogout} user={currentUser}>
         <Routes>
-          {/* Public / Common Routes */}
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/marks" element={<MarksEntry />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/settings" element={<Settings />} />
+          <Route path="/" element={<Dashboard user={currentUser} />} />
+          <Route path="/marks" element={<MarksEntry user={currentUser} />} />
+          <Route path="/reports" element={<Reports user={currentUser} />} />
+          <Route path="/settings" element={<Settings user={currentUser} />} />
 
-          {/* Admin Only Routes */}
           <Route
             path="/students"
             element={

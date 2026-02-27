@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { storageService } from "../../services/storageService";
+import backendService from "../../services/backendService";
 import { Student, SchoolClass, ExamTerm, Session } from "../../types";
 import {
   Trash2,
@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { exportToCSV, parseCSV } from "../../utils/csvHelper";
 
-const StudentManager: React.FC = () => {
+const StudentManager: React.FC<{ user?: any }> = ({ user }) => {
   const [students, setStudents] = useState<Student[]>([]);
   const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>([]);
   const [search, setSearch] = useState("");
@@ -41,33 +41,38 @@ const StudentManager: React.FC = () => {
   const [filterCampus, setFilterCampus] = useState("Boys");
   const [filterClass, setFilterClass] = useState("");
   const [filterSection, setFilterSection] = useState("");
+  const [isGeneratingRoll, setIsGeneratingRoll] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     loadStudents();
   }, []);
 
-  const loadStudents = () => {
-    setStudents(storageService.getStudents());
-    setSchoolClasses(storageService.getClasses());
-    setIsSessionLocked(storageService.isSessionLocked());
+  const loadStudents = async () => {
+    const [studentsData, classesData] = await Promise.all([
+      backendService.getStudents(),
+      backendService.getClasses(),
+    ]);
+    setStudents(studentsData);
+    setSchoolClasses(classesData);
+    setIsSessionLocked(await backendService.isSessionLocked());
   };
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.name && formData.className) {
-      try {
-        if (editingId) {
-          storageService.updateStudent({
-            ...formData,
-            id: editingId,
-          } as Student);
-        } else {
-          storageService.addStudent(formData as Student);
-        }
-        closeModal();
-        loadStudents();
-      } catch (err: any) {
-        alert(err.message);
+    if (!formData.name || !formData.className || !formData.rollNumber) {
+      alert("Name, class and student ID (roll number) are required");
+      return;
+    }
+
+    try {
+      if (editingId) {
+        await backendService.updateStudent(editingId, formData);
+      } else {
+        await backendService.addStudent(formData as Student);
       }
+      closeModal();
+      loadStudents();
+    } catch (err: any) {
+      alert(err.message || "Failed to save student");
     }
   };
 
@@ -75,10 +80,10 @@ const StudentManager: React.FC = () => {
     if (isSessionLocked) return;
     if (
       confirm(
-        "Are you sure you want to delete this student? Marks data will be preserved but orphaned."
+        "Are you sure you want to delete this student? Marks data will be preserved but orphaned.",
       )
     ) {
-      storageService.deleteStudent(id);
+      backendService.deleteStudent(id);
       loadStudents();
     }
   };
@@ -88,7 +93,7 @@ const StudentManager: React.FC = () => {
     setFormData(student);
     setEditingId(student.id);
     const exists = schoolClasses.some(
-      (c) => c.className === student.className && c.section === student.section
+      (c) => c.className === student.className && c.section === student.section,
     );
     setIsCustomClass(!exists && schoolClasses.length > 0);
     setIsModalOpen(true);
@@ -108,6 +113,29 @@ const StudentManager: React.FC = () => {
     setIsCustomClass(false);
   };
 
+  const generateRollNumber = async (campus: "Boys" | "Girls") => {
+    try {
+      setIsGeneratingRoll(true);
+      const next = await backendService.getNextStudentId({ campus });
+      if (!next) return;
+      setFormData((prev) => {
+        // Do not overwrite user-entered/custom values while editing.
+        if (editingId) return prev;
+        return { ...prev, rollNumber: next };
+      });
+    } catch (err) {
+      console.error("Failed to generate student ID:", err);
+    } finally {
+      setIsGeneratingRoll(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isModalOpen || !!editingId) return;
+    const campus = (formData.campus || "Boys") as "Boys" | "Girls";
+    generateRollNumber(campus);
+  }, [isModalOpen, editingId, formData.campus]);
+
   const getCSVValue = (row: any, possibleKeys: string[]) => {
     const rowKeys = Object.keys(row);
 
@@ -121,7 +149,7 @@ const StudentManager: React.FC = () => {
           key
             .toLowerCase()
             .replace(/\s+/g, "")
-            .replace(/[^a-z0-9]/g, "")
+            .replace(/[^a-z0-9]/g, ""),
       );
 
       if (foundKey && row[foundKey] != null) {
@@ -146,7 +174,7 @@ const StudentManager: React.FC = () => {
                 "Student",
                 "Full Name",
                 "StudentName",
-              ])
+              ]),
             );
 
             const className = safeString(
@@ -157,27 +185,29 @@ const StudentManager: React.FC = () => {
                 "Grade Name",
                 "Standard",
                 "Year",
-              ])
+              ]),
             );
 
-            if (!name || !className) return null;
+            const roll = safeString(
+              getCSVValue(row, [
+                "RollNo",
+                "Roll No",
+                "Roll Number",
+                "ID",
+                "Reg No",
+                "Registration No",
+              ]),
+            );
+
+            if (!name || !className || !roll) return null;
 
             return {
               id: "",
-              rollNumber: safeString(
-                getCSVValue(row, [
-                  "RollNo",
-                  "Roll No",
-                  "Roll Number",
-                  "ID",
-                  "Reg No",
-                  "Registration No",
-                ])
-              ),
+              rollNumber: roll,
               name,
               campus: (() => {
                 const raw = safeString(
-                  getCSVValue(row, ["Campus", "Gender", "Branch"])
+                  getCSVValue(row, ["Campus", "Gender", "Branch"]),
                 ).toLowerCase();
                 if (raw.includes("girl") || raw.includes("female"))
                   return "Girls";
@@ -185,7 +215,7 @@ const StudentManager: React.FC = () => {
               })(),
               className,
               section: safeString(
-                getCSVValue(row, ["Section", "Sec", "Class Section"])
+                getCSVValue(row, ["Section", "Sec", "Class Section"]),
               ),
               parentPhone: safeString(
                 getCSVValue(row, [
@@ -194,7 +224,7 @@ const StudentManager: React.FC = () => {
                   "Mobile",
                   "Contact",
                   "Cell",
-                ])
+                ]),
               ),
               sessionId: "",
             };
@@ -202,9 +232,19 @@ const StudentManager: React.FC = () => {
           .filter(Boolean) as Student[];
 
         if (mappedStudents.length > 0) {
-          storageService.addStudentsBulk(mappedStudents);
-          loadStudents();
-          alert(`Successfully processed ${mappedStudents.length} students.`);
+          try {
+            const resp: any =
+              await backendService.addStudentsBulk(mappedStudents);
+            loadStudents();
+            alert(
+              `Import finished: ${resp.imported || mappedStudents.length} added, ${
+                resp.errors ? resp.errors.length : 0
+              } errors`,
+            );
+          } catch (err: any) {
+            console.error(err);
+            alert(err.message || "Failed to import students");
+          }
         } else {
           alert("No valid student data found in CSV.");
         }
@@ -226,7 +266,7 @@ const StudentManager: React.FC = () => {
         attendanceTotal,
         attendancePercentage,
         ...rest
-      }) => rest
+      }) => rest,
     );
     const filename = `Students_${filterCampus || "All"}_${
       filterClass || "All"
@@ -236,8 +276,8 @@ const StudentManager: React.FC = () => {
 
   const filteredStudents = students.filter((s) => {
     const matchesSearch =
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.rollNumber.toLowerCase().includes(search.toLowerCase());
+      (s.name || "").toLowerCase().includes(search.toLowerCase()) ||
+      (s.rollNumber || "").toLowerCase().includes(search.toLowerCase());
     const matchesClass = filterClass ? s.className === filterClass : true;
     const matchesSection = filterSection ? s.section === filterSection : true;
     const matchesCampus = filterCampus ? s.campus === filterCampus : true;
@@ -318,7 +358,18 @@ const StudentManager: React.FC = () => {
           {!isSessionLocked && (
             <>
               <button
-                onClick={() => setIsModalOpen(true)}
+                onClick={() => {
+                  setEditingId(null);
+                  setFormData({
+                    name: "",
+                    rollNumber: "",
+                    campus: "Boys",
+                    className: "",
+                    section: "",
+                    parentPhone: "",
+                  });
+                  setIsModalOpen(true);
+                }}
                 className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition shadow-xs"
               >
                 <UserPlus className="w-4 h-4" /> Add Student
@@ -603,15 +654,21 @@ const StudentManager: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Roll Number
+                    {isGeneratingRoll && (
+                      <span className="ml-2 text-xs text-gray-500">
+                        Generating...
+                      </span>
+                    )}
                   </label>
                   <input
                     type="text"
+                    required
                     value={formData.rollNumber}
                     onChange={(e) =>
                       setFormData({ ...formData, rollNumber: e.target.value })
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
-                    placeholder="Auto-generated if empty"
+                    placeholder="Enter student ID"
                   />
                 </div>
               </div>

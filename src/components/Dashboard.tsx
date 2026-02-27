@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   BarChart,
   Bar,
@@ -29,9 +29,18 @@ import {
   Edit2,
   Printer,
 } from "lucide-react";
-import { storageService } from "../../services/storageService";
+// import { storageService } from "../../services/storageService";
 import { calculateResults, getOrdinalSuffix } from "../../utils/calculations";
 import { Link } from "react-router-dom";
+import backendService from "../../services/backendService";
+import {
+  Student,
+  Subject,
+  ExamTerm,
+  MarkEntry,
+  GradingRule,
+  Session,
+} from "../../types";
 
 // NCSS Palette: Navy (#1B234F), Green (#7bb508)
 const COLORS = [
@@ -81,31 +90,77 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-const Dashboard: React.FC = () => {
-  const currentUser = storageService.getCurrentUser();
+const Dashboard: React.FC<{ user?: any }> = ({ user }) => {
+  const currentUser = user;
   const isTeacher = currentUser?.role === "teacher";
-  const activeSession = storageService.getActiveSession();
 
-  const students = storageService.getStudents();
-  const subjects = storageService.getSubjects();
-  const exams = storageService.getExams();
-  const currentExam = exams[0]; // Default to first exam
-  const marks = storageService.getMarks(currentExam?.id || "");
-  const gradingRules = storageService.getGradingRules();
+  // Data State
+  const [activeSession, setActiveSession] = useState<Session | null>(null);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [exams, setExams] = useState<ExamTerm[]>([]);
+  const [marks, setMarks] = useState<MarkEntry[]>([]);
+  const [gradingRules, setGradingRules] = useState<GradingRule[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Filter States
   const [selectedCampus, setSelectedCampus] = useState<string>("Boys");
   const [selectedClass, setSelectedClass] = useState<string>("");
   const [selectedSection, setSelectedSection] = useState<string>("");
 
+  // Load data from backend
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        // First get active session
+        const session = await backendService.getActiveSession();
+        const sessionId = session?.id;
+
+        // Then fetch all other data
+        const [studentsList, subjectsList, examsList, marksList, rules] =
+          await Promise.all([
+            backendService.getStudents(),
+            backendService.getSubjects(),
+            sessionId
+              ? backendService.getExams(sessionId)
+              : Promise.resolve([]),
+            backendService.getMarks(),
+            backendService.getGradingRules(),
+          ]);
+
+        setActiveSession(session || null);
+        setStudents(studentsList || []);
+        setSubjects(subjectsList || []);
+        setExams(examsList || []);
+        setMarks(marksList || []);
+        setGradingRules(rules || []);
+      } catch (error) {
+        console.error("Error loading dashboard data:", error);
+        // Set empty defaults on error
+        setActiveSession(null);
+        setStudents([]);
+        setSubjects([]);
+        setExams([]);
+        setMarks([]);
+        setGradingRules([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
   // Derived Lists for Dropdowns
   const classes = Array.from(new Set(students.map((s) => s.className))).sort();
   const sections = Array.from(new Set(students.map((s) => s.section))).sort();
+  const currentExam = exams[0]; // Default to first exam
 
   // 1. Calculate ALL Results first
   const allResults = useMemo(
     () => calculateResults(students, subjects, marks, gradingRules),
-    [students, subjects, marks, gradingRules]
+    [students, subjects, marks, gradingRules],
   );
 
   // 2. Filter Results based on selection
@@ -147,12 +202,18 @@ const Dashboard: React.FC = () => {
   const subjectPerformanceData = useMemo(() => {
     return subjects
       .map((sub) => {
-        const relevantMarks = filteredResults
-          .map((r) => r.marks[sub.id])
-          .filter((m) => m !== undefined);
+        const numeric = filteredResults
+          .map((r) => {
+            const raw = r.marks[sub.id] as any;
+            if (raw === undefined) return undefined;
+            return typeof raw === "number"
+              ? raw
+              : (raw?.theory || 0) + (raw?.practical || 0);
+          })
+          .filter((n) => n !== undefined && !isNaN(n)) as number[];
 
-        const avg = relevantMarks.length
-          ? relevantMarks.reduce((a, b) => a + b, 0) / relevantMarks.length
+        const avg = numeric.length
+          ? numeric.reduce((a, b) => a + b, 0) / numeric.length
           : 0;
 
         return { name: sub.name, avg: Math.round(avg) };
@@ -172,7 +233,7 @@ const Dashboard: React.FC = () => {
 
   // 5. Top and Bottom Performers
   const sortedByScore = [...filteredResults].sort(
-    (a, b) => b.percentage - a.percentage
+    (a, b) => b.percentage - a.percentage,
   );
   const rankedResults = sortedByScore.map((r, idx) => ({
     ...r,
@@ -196,6 +257,12 @@ const Dashboard: React.FC = () => {
   if (isTeacher) {
     return (
       <div className="max-w-5xl mx-auto space-y-8 py-8 animate-in fade-in duration-500">
+        {/* Role Indicator Badge */}
+        <div className="inline-flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-4 py-2 rounded-lg text-sm font-bold">
+          <div className="w-2 h-2 bg-green-600 rounded-full"></div>
+          Teacher View - {currentUser?.name}
+        </div>
+
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">
@@ -315,8 +382,25 @@ const Dashboard: React.FC = () => {
   }
 
   // --- ADMIN VIEW (FULL ANALYTICS) ---
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-slate-200 border-t-primary-600 rounded-full animate-spin"></div>
+          <p className="text-gray-500 font-medium">Loading dashboard data...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {/* Role Indicator Badge */}
+      <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-700 px-4 py-2 rounded-lg text-sm font-bold">
+        <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+        Admin View - {currentUser?.name}
+      </div>
+
       {/* Filter Bar */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
         <div>
@@ -422,7 +506,7 @@ const Dashboard: React.FC = () => {
             <AlertCircle className="w-5 h-5 text-gray-400" />
           </div>
           <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={320}>
               <BarChart
                 data={subjectPerformanceData}
                 layout="vertical"
@@ -466,7 +550,7 @@ const Dashboard: React.FC = () => {
                     fill="#4b5563"
                     fontSize={11}
                     fontWeight="bold"
-                    formatter={(val: number) => `${val}%`}
+                    formatter={(val: any) => `${val}%`}
                   />
                 </Bar>
                 <ReferenceLine
@@ -495,7 +579,7 @@ const Dashboard: React.FC = () => {
             Grade Distribution
           </h3>
           <div className="h-80 flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={320}>
               <PieChart>
                 <Pie
                   data={gradeDistribution}
@@ -648,166 +732,3 @@ const Dashboard: React.FC = () => {
 };
 
 export default Dashboard;
-
-// import React, { useMemo, useState } from "react";
-// import { Link } from "react-router-dom";
-// import { Users, BookOpen, Award, TrendingUp, ArrowUp, ArrowDown } from "lucide-react";
-// import { storageService } from "../../services/storageService";
-// import { calculateResults, getOrdinalSuffix } from "../../utils/calculations";
-
-// // Components
-// import StatCard from "./components/StatCard";
-// import FilterBar from "./components/FilterBar";
-// import SubjectPerformanceChart from "./components/SubjectPerformanceChart";
-// import GradeDistributionChart from "./components/GradeDistributionChart";
-// import TeacherActionCards from "./components/TeacherActionCards";
-// import TopPerformersTable from "./components/TopPerformersTable";
-// import BottomPerformersTable from "./components/BottomPerformersTable";
-
-// const COLORS = ["#1B234F", "#7bb508", "#95D122", "#EAB308", "#64748B", "#94A3B8"];
-
-// const Dashboard: React.FC = () => {
-//   const currentUser = storageService.getCurrentUser();
-//   const isTeacher = currentUser?.role === "teacher";
-//   const activeSession = storageService.getActiveSession();
-
-//   const students = storageService.getStudents();
-//   const subjects = storageService.getSubjects();
-//   const exams = storageService.getExams();
-//   const currentExam = exams[0];
-//   const marks = storageService.getMarks(currentExam?.id || "");
-//   const gradingRules = storageService.getGradingRules();
-
-//   // Filters
-//   const [selectedCampus, setSelectedCampus] = useState<string>("Boys");
-//   const [selectedClass, setSelectedClass] = useState<string>("");
-//   const [selectedSection, setSelectedSection] = useState<string>("");
-
-//   // Derived Lists
-//   const classes = Array.from(new Set(students.map((s) => s.className))).sort();
-//   const sections = Array.from(new Set(students.map((s) => s.section))).sort();
-
-//   // Calculate Results
-//   const allResults = useMemo(
-//     () => calculateResults(students, subjects, marks, gradingRules),
-//     [students, subjects, marks, gradingRules]
-//   );
-
-//   const filteredResults = useMemo(() => {
-//     let res = allResults;
-//     if (selectedCampus) res = res.filter((r) => r.student.campus === selectedCampus);
-//     if (selectedClass) res = res.filter((r) => r.student.className === selectedClass);
-//     if (selectedSection) res = res.filter((r) => r.student.section === selectedSection);
-//     return res;
-//   }, [allResults, selectedCampus, selectedClass, selectedSection]);
-
-//   // Fail Grade
-//   const failRule = gradingRules.find((r) => r.minPercentage === 0) || { label: "F" };
-//   const failLabel = failRule.label;
-
-//   // Stats
-//   const passCount = filteredResults.filter((r) => r.grade !== failLabel).length;
-//   const passPercentage = filteredResults.length
-//     ? ((passCount / filteredResults.length) * 100).toFixed(1)
-//     : 0;
-//   const avgPerformance = filteredResults.length
-//     ? (
-//         filteredResults.reduce((acc, curr) => acc + curr.percentage, 0) /
-//         filteredResults.length
-//       ).toFixed(1)
-//     : 0;
-
-//   // Subject Performance Data
-//   const subjectPerformanceData = useMemo(() => {
-//     return subjects
-//       .map((sub) => {
-//         const relevantMarks = filteredResults.map((r) => r.marks[sub.id]).filter((m) => m !== undefined);
-//         const avg = relevantMarks.length
-//           ? relevantMarks.reduce((a, b) => a + b, 0) / relevantMarks.length
-//           : 0;
-//         return { name: sub.name, avg: Math.round(avg) };
-//       })
-//       .sort((a, b) => a.avg - b.avg);
-//   }, [subjects, filteredResults]);
-
-//   // Grade Distribution
-//   const gradeDistribution = useMemo(() => {
-//     return gradingRules
-//       .sort((a, b) => b.minPercentage - a.minPercentage)
-//       .map((rule) => ({
-//         name: rule.label,
-//         value: filteredResults.filter((r) => r.grade === rule.label).length,
-//       }))
-//       .filter((d) => d.value > 0);
-//   }, [gradingRules, filteredResults]);
-
-//   // Top & Bottom Performers
-//   const sortedByScore = [...filteredResults].sort((a, b) => b.percentage - a.percentage);
-//   const rankedResults = sortedByScore.map((r, idx) => ({
-//     ...r,
-//     rank: idx + 1,
-//     positionSuffix: getOrdinalSuffix(idx + 1),
-//   }));
-
-//   const topPerformers = rankedResults.slice(0, 5);
-//   const bottomPerformers = [...rankedResults].reverse().slice(0, 5);
-
-//   const viewTitle = `${selectedCampus} Campus${selectedClass ? " - Class " + selectedClass : ""}`;
-
-//   const getBarColor = (score: number) => {
-//     if (score >= 80) return "#166534";
-//     if (score >= 50) return "#1B234F";
-//     return "#dc2626";
-//   };
-
-//   // --- TEACHER VIEW ---
-//   if (isTeacher) {
-//     return (
-//       <TeacherActionCards
-//         currentUser={currentUser}
-//         activeSession={activeSession}
-//         students={students}
-//         exams={exams}
-//       />
-//     );
-//   }
-
-//   // --- ADMIN VIEW ---
-//   return (
-//     <div className="space-y-6">
-//       <FilterBar
-//         selectedCampus={selectedCampus}
-//         setSelectedCampus={setSelectedCampus}
-//         selectedClass={selectedClass}
-//         setSelectedClass={setSelectedClass}
-//         selectedSection={selectedSection}
-//         setSelectedSection={setSelectedSection}
-//         classes={classes}
-//         sections={sections}
-//         viewTitle={viewTitle}
-//       />
-
-//       {/* Stat Cards */}
-//       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-//         <StatCard title="Students" value={filteredResults.length} icon={Users} colorClass="bg-primary-50" iconColorClass="text-primary-600" />
-//         <StatCard title="Pass Percentage" value={`${passPercentage}%`} icon={TrendingUp} colorClass="bg-secondary-50" iconColorClass="text-secondary-600" />
-//         <StatCard title="Average Score" value={`${avgPerformance}%`} icon={BookOpen} colorClass="bg-secondary-50/50" iconColorClass="text-secondary-500" />
-//         <StatCard title="Top Topper" value={topPerformers[0]?.student.name || "N/A"} icon={Award} colorClass="bg-yellow-50" iconColorClass="text-yellow-600" />
-//       </div>
-
-//       {/* Charts */}
-//       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-//         <SubjectPerformanceChart data={subjectPerformanceData} avgPerformance={avgPerformance} getBarColor={getBarColor} />
-//         <GradeDistributionChart data={gradeDistribution} colors={COLORS} />
-//       </div>
-
-//       {/* Performance Tables */}
-//       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-//         <TopPerformersTable data={topPerformers} failLabel={failLabel} />
-//         <BottomPerformersTable data={bottomPerformers} failLabel={failLabel} />
-//       </div>
-//     </div>
-//   );
-// };
-
-// export default Dashboard;
