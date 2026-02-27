@@ -5,15 +5,12 @@ import {
   Subject,
   ExamTerm,
   MarkEntry,
-  GradingRule,
   SchoolClass,
   Teacher,
 } from "../../types";
 import {
   Save,
-  AlertCircle,
   Upload,
-  Download,
   Check,
   User as UserIcon,
   Printer,
@@ -26,7 +23,6 @@ import {
   Filter,
   ChevronDown,
   CheckCircle2,
-  ArrowRight,
   CalendarDays,
 } from "lucide-react";
 import { parseCSV } from "../../utils/csvHelper";
@@ -1433,8 +1429,8 @@ const MarksEntry: React.FC<{ user?: any }> = ({ user }) => {
                                                                   : isFail
                                                                     ? "border-red-200 bg-red-50 text-red-600 focus:border-red-500"
                                                                     : "border-primary-500 bg-white text-primary-700"
-                                                              }
-                                                         `}
+                                                              }`
+                                                            }
                                 placeholder="-"
                                 autoFocus={index === 0}
                               />

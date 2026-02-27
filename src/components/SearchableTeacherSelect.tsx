@@ -41,7 +41,7 @@ export const SearchableTeacherSelect: React.FC<
   }, []);
 
   const filteredTeachers = teachers.filter((t) =>
-    t.name.toLowerCase().includes(searchTerm.toLowerCase())
+    t.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   const handleSelect = (name: string) => {
@@ -132,8 +132,8 @@ export const SearchableTeacherSelect: React.FC<
                     t.campus === "Both"
                       ? "bg-purple-50 text-purple-600 border-purple-100"
                       : t.campus === "Boys"
-                      ? "bg-primary-50 text-primary-600 border-primary-100"
-                      : "bg-pink-50 text-pink-600 border-pink-100"
+                        ? "bg-primary-50 text-primary-600 border-primary-100"
+                        : "bg-pink-50 text-pink-600 border-pink-100"
                   }`}
                 >
                   {t.campus}

@@ -68,6 +68,7 @@ const ReportCard = forwardRef<
       classHighs,
       gradingRules,
       classTeacherName,
+      onClose,
       isBulkPrint,
     },
     ref,
@@ -130,6 +131,7 @@ const ReportCard = forwardRef<
                 </p>
               </div>
             </div>
+         
           </div>
 
           <div className="inline-block px-5 py-1.5 bg-gray-900 text-white text-sm font-bold uppercase rounded-full mb-8">
@@ -186,6 +188,7 @@ const ReportCard = forwardRef<
                 <th className="border border-gray-300 px-4 py-3 text-center">
                   Max
                 </th>
+             
                 <th className="border border-gray-300 px-4 py-3 text-center font-bold">
                   Obtained
                 </th>
@@ -238,6 +241,7 @@ const ReportCard = forwardRef<
                         sub.totalMarks
                       )}
                     </td>
+                 
                     <td className="border border-gray-300 px-4 py-2.5 text-center font-bold text-gray-800">
                       {sub.components ? (
                         <div className="text-xs grid grid-cols-2 gap-1 text-center">
@@ -283,6 +287,7 @@ const ReportCard = forwardRef<
                 <td className="border border-gray-300 px-4 py-3 text-center text-gray-900">
                   {result.totalMax}
                 </td>
+                {/* <td className="border border-gray-300 px-4 py-3 text-center bg-gray-100"></td> */}
                 <td className="border border-gray-300 px-4 py-3 text-center text-secondary-600 text-lg">
                   {result.totalObtained}
                 </td>
