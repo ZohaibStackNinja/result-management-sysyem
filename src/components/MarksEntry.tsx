@@ -173,6 +173,7 @@ const PrintableSheet: React.FC<{
 
     window.location.reload(); // restore React safely
   };
+const totalStudents = sortedStudents.length
   return (
     <div
       ref={printRef}
@@ -285,18 +286,33 @@ const PrintableSheet: React.FC<{
             />
           </div>
         </div>
-
-        <div className="mt-8 flex justify-between text-xs font-bold pt-8 border-gray-300">
+        <div className="mt-3 flex justify-between items-start text-xs font-bold pt-8">
+          {/* Subject Teacher */}
           <div className="text-center">
-            <div className="w-40 border-b border-black mb-1"></div>
+            <div className="w-30 border-b border-black mb-1"></div>
             Subject Teacher
           </div>
-          <div className="text-center">
-            <div className="w-40 border-b border-black mb-1"></div>
-            Exam Controller
+
+          {/* Subject Stats (replaces Exam Controller) */}
+
+          <div className="flex justify-between w-100 -mt-4">
+            <div className="px-2 py-1  rounded border border-green-300">
+              Total Students: {totalStudents}
+            </div>
+            <div className="px-2 py-1  rounded border border-blue-300">
+              Pass: 
+            </div>
+            <div className="px-2 py-1  rounded border border-red-300">
+              Fail:
+            </div>
+            <div className="px-2 py-1 rounded border border-yellow-300">
+              Pass %: 
+            </div>
           </div>
+
+          {/* Date */}
           <div className="text-center">
-            <div className="w-40 border-b border-black mb-1"></div>
+            <div className="w-30 border-b border-black mb-1"></div>
             Date
           </div>
         </div>
@@ -371,7 +387,8 @@ const AttendanceSheet: React.FC<{
   examName: string;
   onClose: () => void;
   session: string;
-}> = ({ className, section, students, onClose, examName, session }) => {
+  campus: string;
+}> = ({ className, section, students, onClose, examName, session, campus }) => {
   const printRef = useRef<HTMLDivElement>(null);
 
   const sessionName = (session as any)?.name || session || "";
@@ -447,6 +464,10 @@ const AttendanceSheet: React.FC<{
                 SESSION:{" "}
                 <span className="font-normal border-b border-black inline-block min-w-25">
                   {sessionName}
+                </span>
+                Campus:{" "}
+                <span className="font-normal border-b border-black inline-block min-w-12.5">
+                  {campus || ""}
                 </span>
               </div>
               <div>
@@ -771,11 +792,7 @@ const MarksEntry: React.FC<{ user?: any }> = ({ user }) => {
       return;
     }
     // When class has sections, pick the first available section if current one is invalid.
-    if (
-      hasSections &&
-      selectedSection &&
-      !sections.includes(selectedSection)
-    ) {
+    if (hasSections && selectedSection && !sections.includes(selectedSection)) {
       const firstNonEmpty = sections.find((s) => Boolean(s)) || "";
       setSelectedSection(firstNonEmpty);
     }
@@ -1345,7 +1362,7 @@ const MarksEntry: React.FC<{ user?: any }> = ({ user }) => {
                       const isFail =
                         selectedSubject !== ATTENDANCE_SUBJECT_ID &&
                         raw !== undefined &&
-                        combinedScore < maxForRow * 0.4;
+                        combinedScore < maxForRow * 0.5;
 
                       return (
                         <tr
@@ -1404,7 +1421,6 @@ const MarksEntry: React.FC<{ user?: any }> = ({ user }) => {
                                     className={`w-20 text-center py-1 px-1 rounded-lg border-2 focus:ring-2 focus:ring-primary-50 outline-none transition font-bold text-sm ${(raw as any)?.practical === undefined ? "border-gray-200 bg-white" : isFail ? "border-red-200 bg-red-50 text-red-600" : "border-primary-500 bg-white text-primary-700"}`}
                                   />
                                 </div>
-
                                 <div className="ml-2 text-xs font-bold">
                                   {combinedScore}/{maxForRow}
                                 </div>
@@ -1429,8 +1445,7 @@ const MarksEntry: React.FC<{ user?: any }> = ({ user }) => {
                                                                   : isFail
                                                                     ? "border-red-200 bg-red-50 text-red-600 focus:border-red-500"
                                                                     : "border-primary-500 bg-white text-primary-700"
-                                                              }`
-                                                            }
+                                                              }`}
                                 placeholder="-"
                                 autoFocus={index === 0}
                               />
@@ -1530,6 +1545,7 @@ const MarksEntry: React.FC<{ user?: any }> = ({ user }) => {
           examName={exams.find((e) => e.id === selectedExam)?.name || "Exam"}
           session={session}
           onClose={() => setIsAttendanceSheetOpen(false)}
+          campus={selectedCampus}
         />
       )}
     </div>

@@ -17,7 +17,7 @@ const Header: React.FC<HeaderProps> = ({ user, mobileMenuOpen, toggleMenu, title
       <h2 className="text-lg font-bold text-primary-600 hidden md:block">{title}</h2>
 
       <div className="flex items-center gap-4">
-        <div className="flex flex-col items-end hidden sm:block">
+        <div className="flex flex-col items-end sm:block">
           <span className="text-sm font-bold text-slate-800">{user.name}</span>
           <span className="text-xs text-slate-500 capitalize">{user.role}</span>
         </div>

@@ -48,7 +48,11 @@ export const calculateResults = (
   attendanceConfig?: {
     totalDays: number;
     students?: {
-      [studentId: string]: { present?: number; absent?: number; percentage?: number };
+      [studentId: string]: {
+        present?: number;
+        absent?: number;
+        percentage?: number;
+      };
     };
   },
 ): StudentResult[] => {
@@ -56,7 +60,7 @@ export const calculateResults = (
   const sortedRules = [...gradingRules].sort(
     (a, b) => b.minPercentage - a.minPercentage,
   );
-
+  
   const results: StudentResult[] = students.map((student) => {
     const studentMarks: { [key: string]: number } = {};
     let totalObtained = 0;
@@ -100,9 +104,14 @@ export const calculateResults = (
     if (attendanceConfig) {
       const fromAttendance = attendanceConfig.students?.[student.id];
       const present = Number(
-        fromAttendance?.present ?? attMark?.obtainedMarks ?? student.attendancePresent ?? 0,
+        fromAttendance?.present ??
+          attMark?.obtainedMarks ??
+          student.attendancePresent ??
+          0,
       );
-      const total = Number(attendanceConfig.totalDays || student.attendanceTotal || 0);
+      const total = Number(
+        attendanceConfig.totalDays || student.attendanceTotal || 0,
+      );
       attendanceData = {
         present,
         total,

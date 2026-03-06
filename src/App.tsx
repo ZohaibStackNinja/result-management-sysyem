@@ -225,7 +225,7 @@ const RoleBasedRoute = ({
         <h2 className="text-2xl font-bold text-gray-400">Access Denied</h2>
         <p className="text-gray-500 mt-2">
           You do not have permission to view this page.
-        </p>
+        </p> 
         <Link
           to="/"
           className="mt-4 px-4 py-2 bg-primary-600 text-white rounded"

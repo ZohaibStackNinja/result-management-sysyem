@@ -106,7 +106,7 @@ const ReportCard = forwardRef<
         ref={ref}
         className={`bg-white ${
           isPreview
-            ? "rounded-xl shadow-2xl max-w-[20mm] mx-auto p-[11mm] pb-0 overflow-y-auto"
+  ? "rounded-xl shadow-2xl max-w-[850px] mx-auto p-[11mm] pb-0 overflow-y-auto"
             : "w-full p-0 h-full flex flex-col justify-between pb-0"
         } print:overflow-visible `}
       >
@@ -1455,38 +1455,88 @@ const Reports: React.FC<{ user?: any }> = ({ user }) => {
       )}
 
       {/* Modals */}
-      {printMode === "single" && printStudent && (
-        <div
-          className="fixed inset-0 bg-black/50 z-50
-                  print:static print:bg-white"
-        >
-          <div className="no-print absolute top-4 right-4 flex gap-2">
-            <button
-              onClick={() => window.print()}
-              className="bg-primary-600 text-white p-2 rounded-full"
-            >
-              <Printer />
-            </button>
+     {printMode === "single" && printStudent && (
+  <div className="fixed inset-0 bg-black/50 z-50 print:static print:bg-gray-100 print:overflow-visible">
 
-            <button
-              onClick={() => setPrintMode("none")}
-              className="bg-white p-2 rounded-full"
-            >
-              <X />
-            </button>
-          </div>
+    <style>{`
+      @media print {
+        @page { size: A4 portrait; margin: 5mm; }
 
-          <div className="report-card-page">
-            <ReportCard
-              result={printStudent}
-              subjects={filteredSubjects}
-              classHighs={classHighs}
-              gradingRules={gradingRules}
-              classTeacherName={homeroomTeacher}
-            />
-          </div>
-        </div>
-      )}
+        html, body, #root {
+          height: auto !important;
+          overflow: visible !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+
+        .print-container {
+          display: block !important;
+          width: 100% !important;
+        }
+
+        .report-card-page {
+          display: block !important;
+          width: 210mm !important;
+          height: 297mm !important;
+          page-break-after: always !important;
+          break-after: page !important;
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+          margin: 0 auto !important;
+          box-sizing: border-box !important;
+          background: #fff !important;
+          position: relative !important;
+          overflow: visible !important;
+          padding: 0 !important;
+        }
+
+        .report-card-page > div {
+          height: calc(297mm - 24mm) !important;
+          display: flex !important;
+          flex-direction: column !important;
+          justify-content: space-between !important;
+          box-sizing: border-box !important;
+          padding: 12mm !important;
+          padding-bottom: 0mm !important;
+        }
+
+        * {
+          overflow: visible !important;
+        }
+      }
+    `}</style>
+
+    {/* Buttons (hidden when printing) */}
+    <div className="no-print absolute top-4 right-4 flex gap-2">
+      <button
+        onClick={() => window.print()}
+        className="bg-primary-600 text-white p-2 rounded-full"
+      >
+        <Printer />
+      </button>
+
+      <button
+        onClick={() => setPrintMode("none")}
+        className="bg-white p-2 rounded-full"
+      >
+        <X />
+      </button>
+    </div>
+
+    {/* Printable Content */}
+    <div className="print-container">
+      <div className="report-card-page">
+        <ReportCard
+          result={printStudent}
+          subjects={filteredSubjects}
+          classHighs={classHighs}
+          gradingRules={gradingRules}
+          classTeacherName={homeroomTeacher}
+        />
+      </div>
+    </div>
+  </div>
+)}
 
       {showBroadsheet && (
         <BroadsheetView
